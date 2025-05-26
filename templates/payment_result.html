@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resultado del Pago</title>
+    <style>
+        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f4f4f4; }
+        .container { text-align: center; padding: 40px; background-color: white; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        .status { font-size: 24px; font-weight: bold; margin-top: 20px; }
+        .pending { color: #f39c12; }
+        .paid { color: #2ecc71; }
+        .rejected { color: #e74c3c; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Estado de tu Compra</h1>
+        <p>Orden N°: <span id="order-id"></span></p>
+        <div id="status-message" class="status pending">Verificando tu pago...</div>
+    </div>
+
+    {{ commerce_order|json_script:"commerce-order-data" }}
+
+    <script>
+        const commerceOrder = JSON.parse(document.getElementById('commerce-order-data').textContent);
+        document.getElementById('order-id').textContent = commerceOrder;
+
+        const statusMessageDiv = document.getElementById('status-message');
+
+        function checkStatus() {
+            fetch(`/api/order-status/${commerceOrder}/`)
+                .then(response => response.json())
+                .then(data => {
+                    let message = '';
+                    statusMessageDiv.className = 'status';
+
+                    switch (data.status) {
+                        case 'PAID':
+                            message = '¡Pago Aprobado con éxito!';
+                            statusMessageDiv.classList.add('paid');
+                            clearInterval(intervalID);
+                            break;
+                        case 'REJECTED':
+                            message = 'Tu pago fue rechazado.';
+                            statusMessageDiv.classList.add('rejected');
+                            clearInterval(intervalID);
+                            break;
+                        default: // PENDING
+                            message = 'Verificando tu pago...';
+                            statusMessageDiv.classList.add('pending');
+                            break;
+                    }
+                    statusMessageDiv.textContent = message;
+                })
+                .catch(err => {
+                    console.error("Error al verificar el estado:", err);
+                    statusMessageDiv.textContent = "Hubo un error al verificar el estado.";
+                    clearInterval(intervalID);
+                });
+        }
+
+        const intervalID = setInterval(checkStatus, 3000);
+        checkStatus();
+    </script>
+
+</body>
+</html>

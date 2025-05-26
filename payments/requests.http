@@ -1,0 +1,9 @@
+### Crear un nuevo pago en Flow
+POST http://localhost:8000/api/create-payment/
+Content-Type: application/json
+
+{
+    "amount": 3000,
+    "commerceOrder": "124",
+    "subject": "Compra con una herramienta genial"
+}
