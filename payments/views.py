@@ -67,20 +67,22 @@ class CreatePaymentView(APIView):
 
         api_key = os.getenv('FLOW_API_KEY')
         secret_key = os.getenv('FLOW_SECRET_KEY')
-        flow_api_url = "https://sandbox.flow.cl/api/payment/create"
+        # flow_api_url = "https://sandbox.flow.cl/api/payment/create"
+        flow_api_url = os.getenv('FLOW_API_URL_PROD', 'https://flow.cl/api') # URL de producción de Flow
 
         # !!! IMPORTANTE !!!
         # Reemplaza la siguiente URL con tu URL pública de VS Code Ports o ngrok
-        public_url = "https://xns35swf-8000.brs.devtunnels.ms" 
+        # public_url = "https://xns35swf-8000.brs.devtunnels.ms" 
+        public_url_base_from_settings = settings.PUBLIC_URL_BASE
 
         params = {
             'apiKey': api_key,
             'commerceOrder': str(commerce_order),
             'amount': str(amount),
             'subject': subject,
-            'email': "patricio.dilet@gmail.com",
-            'urlConfirmation': f"{public_url}/api/confirm-payment/",
-            'urlReturn': f"{public_url}/payment/result/{commerce_order}/"
+            'email': "cliente.de.prueba@example.com", # En un caso real, obtendrías esto del request
+            'urlConfirmation': f"{public_url_base_from_settings}/api/confirm-payment/",
+            'urlReturn': f"{public_url_base_from_settings}/payment/result/{commerce_order}/"
         }
         
         params['s'] = sign_params(params, secret_key)
