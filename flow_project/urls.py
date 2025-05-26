@@ -6,6 +6,7 @@ from django.urls import path, include
 from payments.views import PaymentResultView
 
 urlpatterns = [
+    path('', health_check_view, name='health_check'),
     path('admin/', admin.site.urls),
     path('api/', include('payments.urls')), # Rutas para nuestro API interno
 

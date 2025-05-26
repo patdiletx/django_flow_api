@@ -7,3 +7,14 @@ Content-Type: application/json
     "commerceOrder": "124",
     "subject": "Compra con una herramienta genial"
 }
+
+
+### C
+POST https://websites-django-flow-api.qdh5jo.easypanel.host/api/create-payment/
+Content-Type: application/json
+
+{
+    "amount": 3000,
+    "commerceOrder": "124",
+    "subject": "Compra con una herramienta genial"
+}
