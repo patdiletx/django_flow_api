@@ -68,7 +68,7 @@ class CreatePaymentView(APIView):
         api_key = os.getenv('FLOW_API_KEY')
         secret_key = os.getenv('FLOW_SECRET_KEY')
         # flow_api_url = "https://sandbox.flow.cl/api/payment/create"
-        flow_api_url = os.getenv('FLOW_API_URL_PROD', 'https://flow.cl/api') # URL de producción de Flow
+        flow_api_url = os.getenv('FLOW_API_URL_PROD', 'https://sandbox.flow.cl/api') # URL de producción de Flow
 
         # !!! IMPORTANTE !!!
         # Reemplaza la siguiente URL con tu URL pública de VS Code Ports o ngrok
