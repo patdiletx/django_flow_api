@@ -44,19 +44,17 @@ def sign_params(params, secret_key):
 class CreatePaymentView(APIView):
     """
     Crea una orden en nuestra base de datos y luego genera la petición
-    de pago en Flow, usando una URL de retorno dinámica proporcionada por el frontend.
+    de pago en Flow. La urlReturn se define en el backend.
     """
     def post(self, request, *args, **kwargs):
         amount = request.data.get('amount')
         commerce_order = request.data.get('commerceOrder')
         subject = request.data.get('subject')
-        # --- NUEVO: Recibimos la URL de retorno desde el frontend ---
-        return_url_from_frontend = request.data.get('return_url')
 
-        # --- NUEVO: Añadimos la validación para return_url ---
-        if not all([amount, commerce_order, subject, return_url_from_frontend]):
+        # Validación: ya NO esperamos return_url desde el request.data
+        if not all([amount, commerce_order, subject]):
             return Response(
-                {"error": "Faltan parámetros requeridos: amount, commerceOrder, subject, return_url"},
+                {"error": "Faltan parámetros requeridos: amount, commerceOrder, subject"},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -74,10 +72,11 @@ class CreatePaymentView(APIView):
 
         api_key = os.getenv('FLOW_API_KEY')
         secret_key = os.getenv('FLOW_SECRET_KEY')
-        flow_api_base_url = os.getenv('FLOW_API_URL_PROD', 'https://sandbox.flow.cl/api')
+        
+        flow_api_base_url = os.getenv('FLOW_API_URL_PROD', 'https://sandbox.flow.cl/api') 
         flow_payment_create_endpoint_url = f"{flow_api_base_url}/payment/create"
 
-        # Obtenemos la URL pública de NUESTRO backend desde settings para la confirmación servidor-a-servidor
+        # Obtenemos la URL pública base de NUESTRO backend desde settings.py
         public_backend_url = settings.PUBLIC_URL_BASE
 
         params = {
@@ -86,26 +85,22 @@ class CreatePaymentView(APIView):
             'amount': str(amount),
             'subject': subject,
             'email': "cliente.de.prueba@example.com",
-            # La URL de confirmación sigue siendo la de nuestro backend
             'urlConfirmation': f"{public_backend_url}/api/confirm-payment/",
-            # --- CAMBIO: Usamos la URL de retorno que nos envió el frontend ---
-            'urlReturn': return_url_from_frontend
+            # --- CAMBIO: urlReturn ahora se construye en el backend ---
+            'urlReturn': f"{public_backend_url}/payment/result/{commerce_order}/"
         }
         
         params['s'] = sign_params(params, secret_key)
-
+        
+        # Código de depuración (mantenlo por ahora)
         print("---------------------------------------------------------")
         print("--- DEBUG: INICIANDO PETICIÓN A FLOW (USANDO PRINT) ---")
         print(f"--- DEBUG: URL Flow: {flow_payment_create_endpoint_url}")
         params_para_imprimir = params.copy()
-        # Si alguna vez incluiste la secret_key en params por error, esto la quitaría antes de imprimir.
-        # if 'secret_key' in params_para_imprimir:
-        #     del params_para_imprimir['secret_key'] 
         print(f"--- DEBUG: Params a Flow: {params_para_imprimir}")
         print("--- DEBUG: FIN DE PETICIÓN A FLOW ---")
         print("---------------------------------------------------------")
 
-        
         try:
             response = requests.post(flow_payment_create_endpoint_url, data=params)
             response.raise_for_status()
@@ -130,7 +125,9 @@ class CreatePaymentView(APIView):
         else:
             new_order.status = 'REJECTED'
             new_order.save()
-            # logger.error(...) si tienes logging configurado
+            # Considera usar logger.error aquí si tienes logging configurado
+            # logger.error(f"Respuesta inesperada de Flow sin token ni código de error: {flow_response} para orden {commerce_order}")
+            print(f"ERROR GRABE: Respuesta inesperada de Flow sin token ni código de error: {flow_response} para orden {commerce_order}")
             return Response(
                 {"error": "Respuesta inesperada de Flow al crear el pago."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -142,7 +139,6 @@ class CreatePaymentView(APIView):
             "redirect_url": payment_redirect_url,
             "token": flow_token
         }, status=status.HTTP_201_CREATED)
-
 
 
 @method_decorator(csrf_exempt, name='dispatch')
