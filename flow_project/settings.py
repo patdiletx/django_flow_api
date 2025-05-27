@@ -42,12 +42,14 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',  # El framework para crear APIs
+    'corsheaders',
     'payments',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -162,3 +164,52 @@ LOGGING = {
         },
     },
 }
+
+
+
+# flow_project/settings.py (al final del archivo)
+
+# --- Configuración de CORS ---
+# Lista de orígenes (dominios) que tienen permitido hacer peticiones a tu API.
+# Reemplaza "https://www.dominio-de-tu-tienda.com" con el dominio real de la tienda.
+CORS_ALLOWED_ORIGINS = [
+    "https://6000-firebase-studio-1748310273827.cluster-iesosxm5fzdewqvhlwn5qivgry.cloudworkstations.dev/",  # Dominio de producción de la tienda
+    "http://www.6000-firebase-studio-1748310273827.cluster-iesosxm5fzdewqvhlwn5qivgry.cloudworkstations.dev/",   # Si también usan HTTP (aunque HTTPS es lo ideal)
+    # Si el desarrollador frontend usa un servidor local para pruebas, añade su URL:
+    "http://localhost:3000",                 # Ejemplo si usan React/Vue en el puerto 3000
+    "http://localhost:8080",                 # Ejemplo para otro puerto común de desarrollo frontend
+    # Añade otros orígenes si es necesario
+]
+
+# Opcional: Si necesitas permitir todos los subdominios de un dominio principal:
+# CORS_ALLOWED_ORIGIN_REGEXES = [
+#     r"^https://\w+\.dominio-de-tu-tienda\.com$",
+# ]
+
+# Para una configuración más abierta SÓLO DURANTE EL DESARROLLO INICIAL (¡NO RECOMENDADO PARA PRODUCCIÓN!):
+# Si no sabes exactamente el dominio del frontend todavía o para pruebas rápidas:
+# CORS_ALLOW_ALL_ORIGINS = True 
+# Si usas esto, asegúrate de cambiarlo a CORS_ALLOWED_ORIGINS antes de ir a producción real.
+
+# Opcional: Si el frontend necesita enviar cookies o cabeceras de autenticación HTTP
+# CORS_ALLOW_CREDENTIALS = True
+
+# Opcional: Métodos HTTP permitidos (GET, POST, PUT, PATCH, DELETE, OPTIONS son comunes)
+# CORS_ALLOW_METHODS = [
+#     "DELETE",
+#     "GET",
+#     "OPTIONS",
+#     "PATCH",
+#     "POST",
+#     "PUT",
+# ]
+
+# Opcional: Cabeceras HTTP permitidas
+# CORS_ALLOW_HEADERS = [
+#     "accept",
+#     "authorization",
+#     "content-type",
+#     "user-agent",
+#     "x-csrftoken",
+#     "x-requested-with",
+# ]
