@@ -62,19 +62,24 @@ class CreatePaymentView(APIView):
                 status='PENDING'
             )
         except Exception as e:
+            # Aquí podrías querer loguear el error 'e' también
             return Response(
-                {"error": f"La orden {commerce_order} ya existe o hubo un error: {e}"},
+                {"error": f"La orden {commerce_order} ya existe o hubo un error al crearla en la BD."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         api_key = os.getenv('FLOW_API_KEY')
         secret_key = os.getenv('FLOW_SECRET_KEY')
-        # flow_api_url = "https://sandbox.flow.cl/api/payment/create"
-        flow_api_url = os.getenv('FLOW_API_URL_PROD', 'https://sandbox.flow.cl/api') # URL de producción de Flow
+        
+        # Obtiene la URL base de Flow desde las variables de entorno de Render/EasyPanel
+        # El segundo argumento es un valor por defecto si la variable no está seteada (útil para desarrollo local)
+        flow_api_base_url = os.getenv('FLOW_API_URL_PROD', 'https://sandbox.flow.cl/api') 
+        
+        # Construye la URL completa para el endpoint específico de creación de pago
+        flow_payment_create_endpoint_url = f"{flow_api_base_url}/payment/create"
 
-        # !!! IMPORTANTE !!!
-        # Reemplaza la siguiente URL con tu URL pública de VS Code Ports o ngrok
-        # public_url = "https://xns35swf-8000.brs.devtunnels.ms" 
+        # Obtiene la URL pública base de tu aplicación desde settings.py
+        # Esta variable (PUBLIC_URL_BASE) la debes haber configurado en Render/EasyPanel
         public_url_base_from_settings = settings.PUBLIC_URL_BASE
 
         params = {
@@ -82,7 +87,7 @@ class CreatePaymentView(APIView):
             'commerceOrder': str(commerce_order),
             'amount': str(amount),
             'subject': subject,
-            'email': "cliente.de.prueba@example.com", # En un caso real, obtendrías esto del request
+            'email': "patricio.dilet@gmail.com", # En un caso real, obtendrías esto del request
             'urlConfirmation': f"{public_url_base_from_settings}/api/confirm-payment/",
             'urlReturn': f"{public_url_base_from_settings}/payment/result/{commerce_order}/"
         }
@@ -94,11 +99,12 @@ class CreatePaymentView(APIView):
         # =============================================================
         print("---------------------------------------------------------")
         print("--- INICIANDO DEPURACIÓN DE PETICIÓN A FLOW ---")
-        print(f"URL de Flow: {flow_api_url}")
+        # Imprime la URL que REALMENTE se usará para la petición a Flow
+        print(f"URL de Flow (endpoint create): {flow_payment_create_endpoint_url}")
         
         params_para_imprimir = params.copy()
-        if 'secret_key' in params_para_imprimir:
-            del params_para_imprimir['secret_key']
+        # No es necesario borrar secret_key de params_para_imprimir porque no está allí,
+        # pero es buena práctica si alguna vez la incluyeras temporalmente.
         
         print(f"Parámetros enviados a Flow: {params_para_imprimir}")
         print("--- FIN DE DEPURACIÓN ---")
@@ -108,24 +114,38 @@ class CreatePaymentView(APIView):
         # =============================================================
 
         try:
-            response = requests.post(flow_api_url, data=params)
-            response.raise_for_status()
+            # Usa la URL COMPLETA del endpoint para la petición
+            response = requests.post(flow_payment_create_endpoint_url, data=params)
+            response.raise_for_status() # Lanza un error para respuestas 4xx/5xx
             flow_response = response.json()
         except requests.exceptions.RequestException as e:
-            new_order.status = 'REJECTED'
+            new_order.status = 'REJECTED' # Marcar la orden como fallida si no se pudo conectar
             new_order.save()
+            # Aquí también es bueno loguear el error 'e'
             return Response({"error": f"Error al conectar con Flow: {e}"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         
-        if 'code' in flow_response:
+        if 'code' in flow_response: # Flow a veces devuelve errores con una estructura {"code": ..., "message": ...}
+            new_order.status = 'REJECTED' # Marcar la orden como fallida
+            new_order.save()
             return Response(
                 {"error": f"Error por parte de Flow: {flow_response.get('message')}"},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
         flow_token = flow_response.get('token')
-        new_order.flow_token = flow_token
-        new_order.save()
-        
+        if flow_token: # Asegurarse de que el token exista
+            new_order.flow_token = flow_token
+            new_order.save()
+        else:
+            # Si Flow no devuelve un token pero tampoco un error con 'code', es una respuesta inesperada.
+            new_order.status = 'REJECTED'
+            new_order.save()
+            logger.error(f"Respuesta inesperada de Flow sin token ni código de error: {flow_response} para orden {commerce_order}")
+            return Response(
+                {"error": "Respuesta inesperada de Flow al crear el pago."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
         payment_redirect_url = f"{flow_response.get('url')}?token={flow_token}"
         
         return Response({
