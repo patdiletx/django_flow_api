@@ -173,8 +173,8 @@ LOGGING = {
 # Lista de orígenes (dominios) que tienen permitido hacer peticiones a tu API.
 # Reemplaza "https://www.dominio-de-tu-tienda.com" con el dominio real de la tienda.
 CORS_ALLOWED_ORIGINS = [
-    "https://6000-firebase-studio-1748310273827.cluster-iesosxm5fzdewqvhlwn5qivgry.cloudworkstations.dev/",  # Dominio de producción de la tienda
-    "http://www.6000-firebase-studio-1748310273827.cluster-iesosxm5fzdewqvhlwn5qivgry.cloudworkstations.dev/",   # Si también usan HTTP (aunque HTTPS es lo ideal)
+    "https://6000-firebase-studio-1748310273827.cluster-iesosxm5fzdewqvhlwn5qivgry.cloudworkstations.dev",  # Dominio de producción de la tienda
+    "http://www.6000-firebase-studio-1748310273827.cluster-iesosxm5fzdewqvhlwn5qivgry.cloudworkstations.dev",   # Si también usan HTTP (aunque HTTPS es lo ideal)
     # Si el desarrollador frontend usa un servidor local para pruebas, añade su URL:
     "http://localhost:3000",                 # Ejemplo si usan React/Vue en el puerto 3000
     "http://localhost:8080",                 # Ejemplo para otro puerto común de desarrollo frontend
