@@ -131,3 +131,34 @@ ALLOWED_HOSTS_STRING = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1')
 # ALLOWED_HOSTS = ['https://xns35swf-8000.brs.devtunnels.ms/', '127.0.0.1', 'localhost']
 ALLOWED_HOSTS = ALLOWED_HOSTS_STRING.split(',') if ALLOWED_HOSTS_STRING else []
 
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose', # Usa 'verbose' para más detalle
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'DEBUG', # Cambiamos a DEBUG para ver todo
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': os.getenv('DJANGO_LOG_LEVEL', 'DEBUG'), # Cambiamos a DEBUG
+            'propagate': False,
+        },
+    },
+}
