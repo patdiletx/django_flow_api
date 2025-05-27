@@ -93,6 +93,18 @@ class CreatePaymentView(APIView):
         }
         
         params['s'] = sign_params(params, secret_key)
+
+        print("---------------------------------------------------------")
+        print("--- DEBUG: INICIANDO PETICIÓN A FLOW (USANDO PRINT) ---")
+        print(f"--- DEBUG: URL Flow: {flow_payment_create_endpoint_url}")
+        params_para_imprimir = params.copy()
+        # Si alguna vez incluiste la secret_key en params por error, esto la quitaría antes de imprimir.
+        # if 'secret_key' in params_para_imprimir:
+        #     del params_para_imprimir['secret_key'] 
+        print(f"--- DEBUG: Params a Flow: {params_para_imprimir}")
+        print("--- DEBUG: FIN DE PETICIÓN A FLOW ---")
+        print("---------------------------------------------------------")
+
         
         try:
             response = requests.post(flow_payment_create_endpoint_url, data=params)

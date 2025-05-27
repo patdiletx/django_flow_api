@@ -9,12 +9,13 @@ Content-Type: application/json
 }
 
 
-### C
-POST https://websites-django-flow-api.qdh5jo.easypanel.host/api/create-payment/
+### C 
+POST https://django-flow-api.onrender.com/api/create-payment/
 Content-Type: application/json
 
 {
-    "amount": 3000,
-    "commerceOrder": "124",
-    "subject": "Compra con una herramienta genial"
+    "amount": 2000,
+    "commerceOrder": "120",
+    "subject": "Compra con una herramienta genial",
+    "return_url": "https://6000-firebase-studio-1748310273827.cluster-iesosxm5fzdewqvhlwn5qivgry.cloudworkstations.dev"
 }
