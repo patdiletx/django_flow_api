@@ -19,4 +19,4 @@ COPY . .
 EXPOSE 8000
 
 # Comando para iniciar la aplicación cuando el contenedor arranque
-CMD ["gunicorn", "flow_project.wsgi:application", "--bind", "0.0.0.0:8000"]
+CMD ["gunicorn", "flow_project.wsgi:application", "--bind", "0.0.0.0:8000", "--log-level=debug", "--access-logfile=-", "--error-logfile=-"]
