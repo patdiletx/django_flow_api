@@ -21,8 +21,6 @@ from django.http import HttpResponse
 # Configura el logger para este módulo
 logger = logging.getLogger(__name__)
 
-def health_check_view(request):
-    return HttpResponse("OK", status=200)
 
 # --- Función Auxiliar para firmar los parámetros ---
 def sign_params(params, secret_key):
@@ -220,3 +218,6 @@ class PaymentResultView(View):
         return render(request, 'payment_result.html', {"commerce_order": commerce_order})
 
 
+
+def health_check_view(request):
+    return HttpResponse("OK", status=200)

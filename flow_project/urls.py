@@ -2,14 +2,17 @@
 
 from django.contrib import admin
 from django.urls import path, include
-# --- ASEGÚRATE DE QUE ESTA LÍNEA ESTÉ AQUÍ ---
-from payments.views import PaymentResultView
+
+# --- IMPORTA PaymentResultView Y health_check_view DESDE payments.views ---
+from payments.views import PaymentResultView, health_check_view 
 
 urlpatterns = [
-    path('', health_check_view, name='health_check'),
+    # La ruta raíz ahora usa la health_check_view importada
+    path('', health_check_view, name='health_check'), 
+    
     path('admin/', admin.site.urls),
     path('api/', include('payments.urls')), # Rutas para nuestro API interno
-
+    
     # Ruta para la página que ve el usuario al volver de Flow
     path('payment/result/<str:commerce_order>/', PaymentResultView.as_view(), name='payment-result-page'),
 ]
