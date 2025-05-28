@@ -30,6 +30,8 @@ ALLOWED_HOSTS = ALLOWED_HOSTS_STRING.split(',') if ALLOWED_HOSTS_STRING else []
 
 PUBLIC_URL_BASE = os.getenv('PUBLIC_URL_BASE', f"http://localhost:8000")
 
+FUNGIFRESH_STORE_URL = os.getenv('FUNGIFRESH_STORE_URL', 'http://localhost:3000') # URL base de la tienda frontend
+
 
 
 # Application definition

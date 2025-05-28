@@ -38,22 +38,21 @@ def sign_params(params, secret_key):
 # --- Vistas del API ---
 class CreatePaymentView(APIView):
     """
-    Crea una orden en nuestra base de datos y luego genera la petición
-    de pago en Flow. La urlReturn se define en el backend.
+    Crea una orden en nuestra BD y genera la petición a Flow.
+    La urlReturn ahora apunta a una página de estado final en esta misma app Django.
     """
     def post(self, request, *args, **kwargs):
         amount = request.data.get('amount')
         commerce_order = request.data.get('commerceOrder')
         subject = request.data.get('subject')
 
-        # Validación de los parámetros de entrada
+        # Validación: ya NO esperamos return_url desde el request.data
         if not all([amount, commerce_order, subject]):
             return Response(
                 {"error": "Faltan parámetros requeridos: amount, commerceOrder, subject"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        # Creación de la orden en la base de datos
+
         try:
             new_order = Order.objects.create(
                 commerce_order=commerce_order,
@@ -61,7 +60,7 @@ class CreatePaymentView(APIView):
                 status='PENDING'
             )
         except Exception as e:
-            # logger.error(f"Error al crear orden {commerce_order} en BD: {e}") # Ejemplo con logger
+            # logger.error(f"Error al crear orden {commerce_order} en BD: {e}")
             print(f"ERROR al crear orden {commerce_order} en BD: {e}")
             return Response(
                 {"error": f"La orden {commerce_order} ya existe o hubo un error al crearla en la BD."},
@@ -70,10 +69,11 @@ class CreatePaymentView(APIView):
 
         api_key = os.getenv('FLOW_API_KEY')
         secret_key = os.getenv('FLOW_SECRET_KEY')
-        
+
         flow_api_base_url = os.getenv('FLOW_API_URL_PROD', 'https://sandbox.flow.cl/api') 
         flow_payment_create_endpoint_url = f"{flow_api_base_url}/payment/create"
 
+        # URL pública base de NUESTRO backend (API) desde settings.py
         public_backend_url = settings.PUBLIC_URL_BASE
 
         params = {
@@ -81,18 +81,17 @@ class CreatePaymentView(APIView):
             'commerceOrder': str(commerce_order),
             'amount': str(amount),
             'subject': subject,
-            'email': "patricio.dilet@gmail.com", # Considera hacerlo dinámico en el futuro
+            'email': "cliente.de.prueba@example.com", # Considera hacerlo dinámico
             'urlConfirmation': f"{public_backend_url}/api/confirm-payment/",
-            'urlReturn': f"{public_backend_url}/payment/result/{commerce_order}/"
+            # --- CAMBIO IMPORTANTE: urlReturn ahora apunta a nuestra nueva vista de estado final ---
+            'urlReturn': f"{public_backend_url}/payment/final-status/{commerce_order}/"
         }
-        
 
-        # Asumimos que sign_params está definida en este archivo o importada
         params['s'] = sign_params(params, secret_key) 
-        
-        # Código de depuración (lo mantenemos por ahora)
+
+        # Mantenemos los prints de depuración por ahora
         print("---------------------------------------------------------")
-        print("--- DEBUG: INICIANDO PETICIÓN A FLOW (CON LÓGICA BD) ---")
+        print("--- DEBUG: INICIANDO PETICIÓN A FLOW (urlReturn interna) ---")
         print(f"--- DEBUG: URL Flow: {flow_payment_create_endpoint_url}")
         params_para_imprimir = params.copy()
         print(f"--- DEBUG: Params a Flow: {params_para_imprimir}")
@@ -101,32 +100,25 @@ class CreatePaymentView(APIView):
 
         try:
             response_from_flow = requests.post(flow_payment_create_endpoint_url, data=params)
-            response_from_flow.raise_for_status() # Lanza HTTPError para respuestas 4xx/5xx
+            response_from_flow.raise_for_status()
             flow_json_response = response_from_flow.json()
-
         except requests.exceptions.HTTPError as http_err:
-            # Error HTTP devuelto por Flow (ej. 400, 401, 500 de Flow)
             new_order.status = 'REJECTED'
             new_order.save()
             error_content = "No se pudo obtener contenido del error de Flow."
-            try:
-                error_content = http_err.response.json()
-            except ValueError:
-                error_content = http_err.response.text[:500]
+            try: error_content = http_err.response.json()
+            except ValueError: error_content = http_err.response.text[:500]
             print(f"ERROR HTTP de Flow: {http_err.response.status_code} - {error_content}")
             return Response({
                 "error": f"Error directo de Flow: {http_err.response.status_code}",
                 "flow_response_details": error_content
-            }, status=status.HTTP_502_BAD_GATEWAY) # 502 porque nuestro servidor tuvo problemas con el upstream (Flow)
-
+            }, status=status.HTTP_502_BAD_GATEWAY)
         except requests.exceptions.RequestException as e:
-            # Otros errores de red (DNS, timeout de conexión, etc.)
             new_order.status = 'REJECTED'
             new_order.save()
             print(f"ERROR de conexión con Flow: {e}")
             return Response({"error": f"Error de conexión al contactar a Flow: {e}"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        
-        # Si Flow devuelve un JSON con un campo 'code', es un error estructurado de Flow
+
         if 'code' in flow_json_response:
             new_order.status = 'REJECTED'
             new_order.save()
@@ -134,13 +126,12 @@ class CreatePaymentView(APIView):
                 {"error": f"Error por parte de Flow: {flow_json_response.get('message')}"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         flow_token = flow_json_response.get('token')
         if flow_token:
             new_order.flow_token = flow_token
-            new_order.save() # Guardamos el token en nuestra orden
+            new_order.save()
         else:
-            # Si la respuesta fue 2xx pero no hay token, algo raro pasó
             new_order.status = 'REJECTED'
             new_order.save()
             print(f"ERROR GRABE: Respuesta exitosa de Flow pero sin token: {flow_json_response} para orden {commerce_order}")
@@ -150,7 +141,7 @@ class CreatePaymentView(APIView):
             )
 
         payment_redirect_url = f"{flow_json_response.get('url')}?token={flow_token}"
-        
+
         return Response({
             "redirect_url": payment_redirect_url,
             "token": flow_token
@@ -263,3 +254,26 @@ class GetOrderStatusByTokenView(APIView):
             return Response({"status": order.status})
         except Order.DoesNotExist:
             return Response({"error": "Orden no encontrada con el token proporcionado"}, status=status.HTTP_404_NOT_FOUND)
+
+
+
+class PaymentFinalStatusView(View):
+    """
+    Renderiza la página de estado final para el usuario, la cual luego lo redirigirá
+    a la tienda principal (FungiFresh) con el estado del pago.
+    """
+    def get(self, request, commerce_order, *args, **kwargs):
+        # Pasamos el commerce_order y la URL de la tienda FungiFresh al template
+        context = {
+            "commerce_order": commerce_order,
+            "fungifresh_store_url": settings.FUNGIFRESH_STORE_URL 
+        }
+        return render(request, 'payment_final_status.html', context)
+
+    def post(self, request, commerce_order, *args, **kwargs):
+        # Manejamos POST igual que GET para esta página de retorno
+        context = {
+            "commerce_order": commerce_order,
+            "fungifresh_store_url": settings.FUNGIFRESH_STORE_URL
+        }
+        return render(request, 'payment_final_status.html', context)

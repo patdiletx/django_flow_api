@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Estado de tu Pago - FungiFresh</title>
+    <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f4f4f4; text-align: center; }
+        .container { padding: 40px; background-color: white; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        .status { font-size: 24px; font-weight: bold; margin-top: 20px; }
+        .pending { color: #f39c12; }
+        .paid { color: #2ecc71; }
+        .rejected { color: #e74c3c; }
+        .store-button { display: none; margin-top: 30px; padding: 10px 20px; font-size: 16px; color: white; background-color: #007bff; border: none; border-radius: 5px; text-decoration: none; cursor: pointer; }
+        .store-button:hover { background-color: #0056b3; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Resultado de tu Compra</h1>
+        <p>Orden N°: <span id="order-id">{{ commerce_order }}</span></p>
+        <div id="status-message" class="status pending">Verificando tu pago, por favor espera...</div>
+        <a id="store-link" class="store-button">Volver a la Tienda</a>
+    </div>
+
+    {{ commerce_order|json_script:"commerce-order-data" }}
+    {{ fungifresh_store_url|json_script:"fungifresh-store-url-data" }}
+
+    <script>
+        const commerceOrder = JSON.parse(document.getElementById('commerce-order-data').textContent);
+        const fungifreshStoreBaseUrl = JSON.parse(document.getElementById('fungifresh-store-url-data').textContent);
+
+        const statusMessageDiv = document.getElementById('status-message');
+        const storeLink = document.getElementById('store-link');
+
+        function checkStatus() {
+            fetch(`/api/order-status/${commerceOrder}/`) // Seguimos usando el mismo API de estado
+                .then(response => response.json())
+                .then(data => {
+                    let message = '';
+                    let redirectUrl = `${fungifreshStoreBaseUrl}`; // URL base de la tienda
+                    statusMessageDiv.className = 'status'; 
+
+                    switch (data.status) {
+                        case 'PAID':
+                            message = '¡Pago Aprobado con éxito!';
+                            statusMessageDiv.classList.add('paid');
+                            redirectUrl += `?status=success&orderId=${commerceOrder}`;
+                            clearInterval(intervalID);
+                            storeLink.style.display = 'inline-block';
+                            break;
+                        case 'REJECTED':
+                            message = 'Tu pago fue rechazado.';
+                            statusMessageDiv.classList.add('rejected');
+                            redirectUrl += `?status=rejected&orderId=${commerceOrder}`;
+                            clearInterval(intervalID);
+                            storeLink.style.display = 'inline-block';
+                            break;
+                        default: // PENDING
+                            message = 'Verificando tu pago, por favor espera...';
+                            statusMessageDiv.classList.add('pending');
+                            // Mantenemos el botón oculto y seguimos verificando
+                            break;
+                    }
+                    statusMessageDiv.textContent = message;
+                    if (data.status === 'PAID' || data.status === 'REJECTED') {
+                        storeLink.href = redirectUrl;
+                    }
+                })
+                .catch(err => {
+                    console.error("Error al verificar el estado:", err);
+                    statusMessageDiv.textContent = "Hubo un error al verificar el estado. Intenta volver a la tienda.";
+                    statusMessageDiv.classList.add('rejected');
+                    storeLink.href = `<span class="math-inline">\{fungifreshStoreBaseUrl\}?status\=error&orderId\=</span>{commerceOrder}`;
+                    clearInterval(intervalID);
+                    storeLink.style.display = 'inline-block';
+                });
+        }
+
+        const intervalID = setInterval(checkStatus, 3000);
+        // Hacemos una primera verificación inmediata al cargar la página.
+        checkStatus();
+    </script>
+</body>
+</html>
