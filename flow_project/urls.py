@@ -4,7 +4,7 @@ from django.contrib import admin
 from django.urls import path, include
 
 # --- IMPORTA PaymentResultView Y health_check_view DESDE payments.views ---
-from payments.views import PaymentResultView, health_check_view 
+from payments.views import PaymentResultView, health_check_view, FlowReturnHandlerView 
 
 urlpatterns = [
     # La ruta raíz ahora usa la health_check_view importada
