@@ -14,8 +14,7 @@ POST https://django-flow-api.onrender.com/api/create-payment/
 Content-Type: application/json
 
 {
-    "amount": 2000,
-    "commerceOrder": "120",
-    "subject": "Compra con una herramienta genial",
-    "return_url": "https://6000-firebase-studio-1748310273827.cluster-iesosxm5fzdewqvhlwn5qivgry.cloudworkstations.dev"
+    "amount": 1000,
+    "commerceOrder": "992",
+    "subject": "Compra con una herramienta genial"
 }
