@@ -82,7 +82,7 @@ class CreatePaymentView(APIView):
             'commerceOrder': str(commerce_order),
             'amount': str(amount),
             'subject': subject,
-            'email': "cliente.de.prueba@example.com", # Considera hacerlo dinámico
+            'email': "patricio.dilet@gmail.com", # Considera hacerlo dinámico
             'urlConfirmation': f"{public_backend_url}/api/confirm-payment/",
             # --- CAMBIO IMPORTANTE: urlReturn ahora apunta a nuestra nueva vista de estado final ---
             'urlReturn': f"{public_backend_url}/payment/flow-return-handler/"
