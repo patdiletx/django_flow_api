@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-$o7-r!%civl+zfirday!747=u(9m5#y5ielukwi@)r8-(@7#&x
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DJANGO_DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS_STRING = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost','127.0.0.1')
+ALLOWED_HOSTS_STRING = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost')
 ALLOWED_HOSTS = ALLOWED_HOSTS_STRING.split(',') if ALLOWED_HOSTS_STRING else []
 
 PUBLIC_URL_BASE = os.getenv('PUBLIC_URL_BASE', f"http://localhost:8000")
