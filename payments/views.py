@@ -83,7 +83,7 @@ class CreatePaymentView(APIView):
             'subject': subject,
             'email': "patricio.dilet@gmail.com", # Considera hacerlo dinámico en el futuro
             'urlConfirmation': f"{public_backend_url}/api/confirm-payment/",
-            'urlReturn': f"https://6000-firebase-studio-1748310273827.cluster-iesosxm5fzdewqvhlwn5qivgry.cloudworkstations.dev/payment/result/{commerce_order}/"
+            'urlReturn': f"{public_backend_url}/payment/result/{commerce_order}/"
         }
         
 
