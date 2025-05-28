@@ -105,10 +105,10 @@ class CreatePaymentView(APIView):
             response = requests.post(flow_payment_create_endpoint_url, data=params)
             response.raise_for_status()
             flow_response = response.json()
-        # except requests.exceptions.RequestException as e:
-        #     new_order.status = 'REJECTED'
-        #     new_order.save()
-        #     return Response({"error": f"Error al conectar con Flow: {e}"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except requests.exceptions.RequestException as e:
+            new_order.status = 'REJECTED'
+            new_order.save()
+            return Response({"error": f"Error al conectar con Flow: {e}"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         
         # if 'code' in flow_response:
         #     new_order.status = 'REJECTED'
