@@ -15,6 +15,7 @@ from django.views import View
 from .models import Order
 from django.conf import settings
 from django.http import HttpResponse
+from django.http import HttpResponseRedirect
 
 # Configura el logger para este módulo
 logger = logging.getLogger(__name__)
@@ -84,7 +85,7 @@ class CreatePaymentView(APIView):
             'email': "cliente.de.prueba@example.com", # Considera hacerlo dinámico
             'urlConfirmation': f"{public_backend_url}/api/confirm-payment/",
             # --- CAMBIO IMPORTANTE: urlReturn ahora apunta a nuestra nueva vista de estado final ---
-            'urlReturn': f"{public_backend_url}/payment/final-status/{commerce_order}/"
+            'urlReturn': f"{public_backend_url}/payment/flow-return-handler/"
         }
 
         params['s'] = sign_params(params, secret_key) 
@@ -102,6 +103,22 @@ class CreatePaymentView(APIView):
             response_from_flow = requests.post(flow_payment_create_endpoint_url, data=params)
             response_from_flow.raise_for_status()
             flow_json_response = response_from_flow.json()
+
+            if 'code' in flow_json_response: # Error estructurado de Flow
+                new_order.status = 'REJECTED'; new_order.save()
+                return Response({"error": f"Error por parte de Flow: {flow_json_response.get('message')}"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            flow_token = flow_json_response.get('token')
+            if flow_token:
+                new_order.flow_token = flow_token; new_order.save()
+            else: # Respuesta inesperada sin token
+                new_order.status = 'REJECTED'; new_order.save()
+                print(f"ERROR GRABE: Respuesta exitosa de Flow pero sin token: {flow_json_response} para orden {commerce_order}")
+                return Response({"error": "Respuesta inesperada de Flow al crear el pago (sin token)."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            payment_redirect_url = f"{flow_json_response.get('url')}?token={flow_token}"
+            return Response({"redirect_url": payment_redirect_url, "token": flow_token}, status=status.HTTP_201_CREATED)
+
         except requests.exceptions.HTTPError as http_err:
             new_order.status = 'REJECTED'
             new_order.save()
@@ -277,3 +294,75 @@ class PaymentFinalStatusView(View):
             "fungifresh_store_url": settings.FUNGIFRESH_STORE_URL
         }
         return render(request, 'payment_final_status.html', context)
+
+
+
+@method_decorator(csrf_exempt, name='dispatch') # Por si Flow decide hacer POST aquí alguna vez
+class FlowReturnHandlerView(View):
+    """
+    Maneja el retorno del usuario desde Flow.
+    Verifica el estado del pago con Flow usando el token y redirige
+    al usuario al frontend de FungiFresh con el resultado.
+    """
+    def get(self, request, *args, **kwargs):
+        flow_token = request.GET.get('token')
+
+        if not flow_token:
+            # Si no hay token, redirigir a FungiFresh con un error genérico
+            error_url = f"{settings.FUNGIFRESH_STORE_URL}/checkout/confirmation?status=error&reason=missing_token"
+            return HttpResponseRedirect(error_url)
+
+        # Consultar el estado del pago en Flow usando el token
+        api_key = os.getenv('FLOW_API_KEY')
+        secret_key = os.getenv('FLOW_SECRET_KEY')
+        flow_api_base_url = os.getenv('FLOW_API_URL_PROD', 'https://sandbox.flow.cl/api')
+        flow_status_endpoint_url = f"{flow_api_base_url}/payment/getStatus"
+        
+        params_to_sign = {'apiKey': api_key, 'token': flow_token}
+        signature = sign_params(params_to_sign, secret_key)
+        
+        params_for_get_status = {'apiKey': api_key, 'token': flow_token, 's': signature}
+
+        order_in_db = None
+        try:
+            # Intentamos obtener nuestra orden local usando el flow_token para tener el commerceOrder
+            # Si no la encontramos aún (podría ser una carrera con el webhook), no es crítico para la redirección
+            order_in_db = Order.objects.filter(flow_token=flow_token).first()
+        except Exception:
+            pass # No bloqueamos la redirección si no encontramos la orden local inmediatamente
+
+        final_redirect_url = ""
+        try:
+            response = requests.get(flow_status_endpoint_url, params=params_for_get_status)
+            response.raise_for_status()
+            payment_data = response.json()
+
+            flow_status_code = payment_data.get('status') # 1=Pendiente, 2=Pagada, 3=Rechazada, 4=Anulada
+            commerce_order_from_flow = payment_data.get('commerceOrder', 'unknown') # Tomamos el commerceOrder de Flow
+
+            # Es buena idea actualizar nuestra BD aquí también, aunque el webhook es el principal
+            if order_in_db and order_in_db.status == 'PENDING':
+                if flow_status_code == 2: order_in_db.status = 'PAID'
+                elif flow_status_code == 3 or flow_status_code == 4: order_in_db.status = 'REJECTED'
+                order_in_db.save()
+            
+            # Construir la URL de FungiFresh
+            fungifresh_base_redirect = f"{settings.FUNGIFRESH_STORE_URL}/checkout/confirmation"
+            if flow_status_code == 2: # Pagada
+                final_redirect_url = f"{fungifresh_base_redirect}?status=success&orderId={commerce_order_from_flow}&flowToken={flow_token}"
+            elif flow_status_code == 3 or flow_status_code == 4: # Rechazada o Anulada
+                final_redirect_url = f"{fungifresh_base_redirect}?status=failure&orderId={commerce_order_from_flow}&flowToken={flow_token}"
+            else: # Pendiente u otro estado
+                final_redirect_url = f"{fungifresh_base_redirect}?status=pending&orderId={commerce_order_from_flow}&flowToken={flow_token}"
+
+        except requests.exceptions.RequestException as e:
+            print(f"Error al consultar estado en Flow (ReturnHandler): {e}")
+            # Si falla la consulta a Flow, redirigir a FungiFresh con un error
+            commerce_order_for_error = order_in_db.commerce_order if order_in_db else "unknown_order"
+            final_redirect_url = f"{settings.FUNGIFRESH_STORE_URL}/checkout/confirmation?status=error&reason=flow_status_check_failed&orderId={commerce_order_for_error}&flowToken={flow_token}"
+        
+        return HttpResponseRedirect(final_redirect_url)
+
+    def post(self, request, *args, **kwargs):
+        # Por si Flow alguna vez decide hacer POST a esta URL de retorno
+        return self.get(request, *args, **kwargs)
