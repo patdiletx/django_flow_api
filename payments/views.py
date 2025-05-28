@@ -40,29 +40,44 @@ def sign_params(params, secret_key):
 # --- Vistas del API ---
 class CreatePaymentView(APIView):
     """
-    Crea una orden en nuestra BD y genera la petición a Flow.
-    La urlReturn ahora apunta a una página de estado final en esta misma app Django.
+    Recibe detalles del pedido y envío de FungiGrow, crea una orden local,
+    genera la petición de pago en Flow, y devuelve la URL de Flow para el pago.
     """
     def post(self, request, *args, **kwargs):
         amount = request.data.get('amount')
         commerce_order = request.data.get('commerceOrder')
         subject = request.data.get('subject')
+        # Nuevos campos del payload
+        currency = request.data.get('currency', 'CLP') # Moneda, con CLP por defecto
+        fungigrow_return_url_from_frontend = request.data.get('return_url')
+        shipping_details = request.data.get('shippingDetails', {}) # Objeto, default a dict vacío
 
-        # Validación: ya NO esperamos return_url desde el request.data
-        if not all([amount, commerce_order, subject]):
+        # Validación más completa
+        if not all([amount, commerce_order, subject, fungigrow_return_url_from_frontend]):
+            missing_params = []
+            if not amount: missing_params.append("amount")
+            if not commerce_order: missing_params.append("commerceOrder")
+            if not subject: missing_params.append("subject")
+            if not fungigrow_return_url_from_frontend: missing_params.append("return_url")
             return Response(
-                {"error": "Faltan parámetros requeridos: amount, commerceOrder, subject"},
+                {"error": f"Faltan parámetros requeridos: {', '.join(missing_params)}"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-
+        
         try:
             new_order = Order.objects.create(
                 commerce_order=commerce_order,
                 amount=amount,
-                status='PENDING'
+                status='PENDING',
+                fungigrow_return_url=fungigrow_return_url_from_frontend, # Guardamos la URL de FungiGrow
+                shipping_name=shipping_details.get('nombreCompleto'),
+                shipping_rut=shipping_details.get('rut'),
+                shipping_address=shipping_details.get('direccion'),
+                shipping_commune=shipping_details.get('comuna'),
+                shipping_region=shipping_details.get('region'),
+                shipping_phone=shipping_details.get('telefono')
             )
         except Exception as e:
-            # logger.error(f"Error al crear orden {commerce_order} en BD: {e}")
             print(f"ERROR al crear orden {commerce_order} en BD: {e}")
             return Response(
                 {"error": f"La orden {commerce_order} ya existe o hubo un error al crearla en la BD."},
@@ -71,99 +86,64 @@ class CreatePaymentView(APIView):
 
         api_key = os.getenv('FLOW_API_KEY')
         secret_key = os.getenv('FLOW_SECRET_KEY')
-
-        flow_api_base_url = os.getenv('FLOW_API_URL_PROD', 'https://sandbox.flow.cl/api') 
+        flow_api_base_url = os.getenv('FLOW_API_URL_PROD', 'https://sandbox.flow.cl/api')
         flow_payment_create_endpoint_url = f"{flow_api_base_url}/payment/create"
 
-        # URL pública base de NUESTRO backend (API) desde settings.py
-        public_backend_url = settings.PUBLIC_URL_BASE
+        public_backend_url = settings.PUBLIC_URL_BASE # Nuestra URL base de la API Django
 
         params = {
             'apiKey': api_key,
             'commerceOrder': str(commerce_order),
             'amount': str(amount),
             'subject': subject,
-            'email': "patricio.dilet@gmail.com", # Considera hacerlo dinámico
+            'email': "cliente.de.prueba@example.com", # Considera obtenerlo de shippingDetails o request.data
+            # El webhook de confirmación servidor-a-servidor sigue siendo nuestro
             'urlConfirmation': f"{public_backend_url}/api/confirm-payment/",
-            # --- CAMBIO IMPORTANTE: urlReturn ahora apunta a nuestra nueva vista de estado final ---
-            'urlReturn': f"{public_backend_url}/payment/flow-callback/" 
+            # urlReturn para Flow AHORA apunta a nuestro endpoint de callback
+            'urlReturn': f"{public_backend_url}/payment/flow-callback/"
         }
-
-        params['s'] = sign_params(params, secret_key) 
-
-        # Mantenemos los prints de depuración por ahora
+        
+        params['s'] = sign_params(params, secret_key)
+        
+        # (Los prints de depuración pueden quedarse o quitarse según prefieras)
         print("---------------------------------------------------------")
-        print("--- DEBUG: INICIANDO PETICIÓN A FLOW (urlReturn interna) ---")
+        print("--- DEBUG: CREATE_PAYMENT PETICIÓN A FLOW ---")
         print(f"--- DEBUG: URL Flow: {flow_payment_create_endpoint_url}")
-        params_para_imprimir = params.copy()
-        print(f"--- DEBUG: Params a Flow: {params_para_imprimir}")
-        print("--- DEBUG: FIN DE PETICIÓN A FLOW ---")
+        params_para_imprimir = params.copy(); params_para_imprimir.pop('apiKey', None) # No imprimir apiKey
+        print(f"--- DEBUG: Params a Flow (sin apiKey): {params_para_imprimir}")
         print("---------------------------------------------------------")
 
         try:
             response_from_flow = requests.post(flow_payment_create_endpoint_url, data=params)
             response_from_flow.raise_for_status()
             flow_json_response = response_from_flow.json()
-
-            if 'code' in flow_json_response: # Error estructurado de Flow
+            
+            if 'code' in flow_json_response:
                 new_order.status = 'REJECTED'; new_order.save()
                 return Response({"error": f"Error por parte de Flow: {flow_json_response.get('message')}"}, status=status.HTTP_400_BAD_REQUEST)
             
             flow_token = flow_json_response.get('token')
             if flow_token:
                 new_order.flow_token = flow_token; new_order.save()
-            else: # Respuesta inesperada sin token
+            else:
                 new_order.status = 'REJECTED'; new_order.save()
-                print(f"ERROR GRABE: Respuesta exitosa de Flow pero sin token: {flow_json_response} para orden {commerce_order}")
-                return Response({"error": "Respuesta inesperada de Flow al crear el pago (sin token)."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                print(f"ERROR GRABE: Respuesta de Flow sin token: {flow_json_response} para orden {commerce_order}")
+                return Response({"error": "Respuesta inesperada de Flow (sin token)."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
             payment_redirect_url = f"{flow_json_response.get('url')}?token={flow_token}"
             return Response({"redirect_url": payment_redirect_url, "token": flow_token}, status=status.HTTP_201_CREATED)
 
         except requests.exceptions.HTTPError as http_err:
-            new_order.status = 'REJECTED'
-            new_order.save()
+            new_order.status = 'REJECTED'; new_order.save()
             error_content = "No se pudo obtener contenido del error de Flow."
             try: error_content = http_err.response.json()
             except ValueError: error_content = http_err.response.text[:500]
             print(f"ERROR HTTP de Flow: {http_err.response.status_code} - {error_content}")
-            return Response({
-                "error": f"Error directo de Flow: {http_err.response.status_code}",
-                "flow_response_details": error_content
-            }, status=status.HTTP_502_BAD_GATEWAY)
+            return Response({"error": f"Error directo de Flow: {http_err.response.status_code}", "flow_response_details": error_content}, status=status.HTTP_502_BAD_GATEWAY)
         except requests.exceptions.RequestException as e:
-            new_order.status = 'REJECTED'
-            new_order.save()
+            new_order.status = 'REJECTED'; new_order.save()
             print(f"ERROR de conexión con Flow: {e}")
             return Response({"error": f"Error de conexión al contactar a Flow: {e}"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-
-        if 'code' in flow_json_response:
-            new_order.status = 'REJECTED'
-            new_order.save()
-            return Response(
-                {"error": f"Error por parte de Flow: {flow_json_response.get('message')}"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        flow_token = flow_json_response.get('token')
-        if flow_token:
-            new_order.flow_token = flow_token
-            new_order.save()
-        else:
-            new_order.status = 'REJECTED'
-            new_order.save()
-            print(f"ERROR GRABE: Respuesta exitosa de Flow pero sin token: {flow_json_response} para orden {commerce_order}")
-            return Response(
-                {"error": "Respuesta inesperada de Flow al crear el pago (sin token)."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-        payment_redirect_url = f"{flow_json_response.get('url')}?token={flow_token}"
-
-        return Response({
-            "redirect_url": payment_redirect_url,
-            "token": flow_token
-        }, status=status.HTTP_201_CREATED)
 
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -455,3 +435,26 @@ class FlowReturnHandlerView(View):
 
     def post(self, request, *args, **kwargs):
         return self.handle_return_logic(request)
+
+
+
+
+                redirect_params['message'] = 'Estado de pago desconocido desde Flow'
+        
+        except requests.exceptions.RequestException as e:
+            print(f"Error al consultar estado en Flow (FlowCallbackView): {e}")
+            redirect_params['status'] = 'error'
+            redirect_params['message'] = 'Fallo en la verificacion del estado con Flow'
+        
+        # Limpiar espacios en el mensaje para la URL
+        if 'message' in redirect_params and redirect_params['message']:
+            redirect_params['message'] = urllib.parse.quote_plus(str(redirect_params['message']))
+
+        query_string = urllib.parse.urlencode(redirect_params)
+        return HttpResponseRedirect(f"{fungifresh_base_url}{fungifresh_final_path}?{query_string}")
+
+    def get(self, request, *args, **kwargs):
+        return self.handle_callback(request)
+
+    def post(self, request, *args, **kwargs):
+        return self.handle_callback(request)
