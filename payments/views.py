@@ -140,43 +140,7 @@ def sign_params(params, secret_key):
 #             "token": flow_token
 #         }, status=status.HTTP_201_CREATED)
 
-
-¡Entendido! Simplificar la vista CreatePaymentView al mínimo indispensable para llamar a Flow es una excelente estrategia de depuración. Esto nos ayudará a confirmar si el problema está en la interacción directa con Flow o en alguna otra parte de nuestra lógica (como la base de datos, aunque es menos probable que eso cause el error 400 de Flow directamente).
-
-Aquí tienes la clase CreatePaymentView modificada. He eliminado todas las interacciones con el modelo Order y la lógica de error relacionada con la base de datos. El enfoque es 100% en la llamada a Flow y su respuesta.
-
-Asegúrate de que la función sign_params que ya tenemos definida en tu archivo payments/views.py siga estando allí, ya que esta vista la necesita.
-
-CreatePaymentView Simplificada para Pruebas:
-Python
-
-# payments/views.py
-
-# Asegúrate de tener estas importaciones al principio de tu archivo:
-import os
-import requests
-import hmac
-import hashlib
-from collections import OrderedDict
-from django.conf import settings # Para settings.PUBLIC_URL_BASE
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-# Ya NO necesitamos: from .models import Order para esta vista simplificada
-# Ya NO necesitamos: from django.db import transaction para esta vista simplificada
-
-# TU FUNCIÓN sign_params DEBE ESTAR AQUÍ O IMPORTADA
-# Ejemplo:
-# def sign_params(params, secret_key):
-#     sorted_params = OrderedDict(sorted(params.items()))
-#     param_string = "".join([f"{k}{v}" for k, v in sorted_params.items()])
-#     print(f"--- DEBUG SIGNATURE: String para firmar: '{param_string}' ---") # Mantén este debug
-#     signature = hmac.new(
-#         secret_key.encode('utf-8'),
-#         param_string.encode('utf-8'),
-#         hashlib.sha256
-#     ).hexdigest()
-#     return signature
+  
 
 class CreatePaymentView(APIView):
     """
