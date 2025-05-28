@@ -101,10 +101,10 @@ class CreatePaymentView(APIView):
         print("--- DEBUG: FIN DE PETICIÓN A FLOW ---")
         print("---------------------------------------------------------")
 
-        # try:
-        #     response = requests.post(flow_payment_create_endpoint_url, data=params)
-        #     response.raise_for_status()
-        #     flow_response = response.json()
+        try:
+            response = requests.post(flow_payment_create_endpoint_url, data=params)
+            response.raise_for_status()
+            flow_response = response.json()
         # except requests.exceptions.RequestException as e:
         #     new_order.status = 'REJECTED'
         #     new_order.save()
@@ -118,7 +118,7 @@ class CreatePaymentView(APIView):
         #         status=status.HTTP_400_BAD_REQUEST
         #     )
         
-        # flow_token = flow_response.get('token')
+        flow_token = flow_response.get('token')
         # if flow_token:
         #     new_order.flow_token = flow_token
         #     new_order.save()
