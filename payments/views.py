@@ -96,7 +96,7 @@ class CreatePaymentView(APIView):
             'commerceOrder': str(commerce_order),
             'amount': str(amount),
             'subject': subject,
-            'email': "cliente.de.prueba@example.com", # Considera obtenerlo de shippingDetails o request.data
+            'email': "patricio.dilet@gmail.com", # Considera obtenerlo de shippingDetails o request.data
             # El webhook de confirmación servidor-a-servidor sigue siendo nuestro
             'urlConfirmation': f"{public_backend_url}/api/confirm-payment/",
             # urlReturn para Flow AHORA apunta a nuestro endpoint de callback
