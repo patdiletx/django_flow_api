@@ -79,13 +79,22 @@ TEMPLATES = [
 WSGI_APPLICATION = 'flow_project.wsgi.application'
 
 
+
+
+# --- CONFIGURACIÓN DE BASE DE DATOS ---
+# La ruta donde se montará el disco persistente en Render
+# En desarrollo local, si SQLITE_MOUNT_PATH no está seteada, usará BASE_DIR.
+DB_MOUNT_DIR_STR = os.getenv('SQLITE_DB_MOUNT_PATH', str(BASE_DIR))
+DB_MOUNT_DIR = Path(DB_MOUNT_DIR_STR)
+
+
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'NAME': DB_MOUNT_DIR  / 'db.sqlite3',
     }
 }
 
