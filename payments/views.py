@@ -52,23 +52,23 @@ class CreatePaymentView(APIView):
         subject = request.data.get('subject')
 
         # Validación: ya NO esperamos return_url desde el request.data
-        # if not all([amount, commerce_order, subject]):
-        #     return Response(
-        #         {"error": "Faltan parámetros requeridos: amount, commerceOrder, subject"},
-        #         status=status.HTTP_400_BAD_REQUEST
-        #     )
+        if not all([amount, commerce_order, subject]):
+            return Response(
+                {"error": "Faltan parámetros requeridos: amount, commerceOrder, subject"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
-        # try:
-        #     new_order = Order.objects.create(
-        #         commerce_order=commerce_order,
-        #         amount=amount,
-        #         status='PENDING'
-        #     )
-        # except Exception as e:
-        #     return Response(
-        #         {"error": f"La orden {commerce_order} ya existe o hubo un error al crearla en la BD."},
-        #         status=status.HTTP_400_BAD_REQUEST
-        #     )
+        try:
+            new_order = Order.objects.create(
+                commerce_order=commerce_order,
+                amount=amount,
+                status='PENDING'
+            )
+        except Exception as e:
+            return Response(
+                {"error": f"La orden {commerce_order} ya existe o hubo un error al crearla en la BD."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         api_key = os.getenv('FLOW_API_KEY')
         secret_key = os.getenv('FLOW_SECRET_KEY')
@@ -110,28 +110,28 @@ class CreatePaymentView(APIView):
             new_order.save()
             return Response({"error": f"Error al conectar con Flow: {e}"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         
-        # if 'code' in flow_response:
-        #     new_order.status = 'REJECTED'
-        #     new_order.save()
-        #     return Response(
-        #         {"error": f"Error por parte de Flow: {flow_response.get('message')}"},
-        #         status=status.HTTP_400_BAD_REQUEST
-        #     )
+        if 'code' in flow_response:
+            new_order.status = 'REJECTED'
+            new_order.save()
+            return Response(
+                {"error": f"Error por parte de Flow: {flow_response.get('message')}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
         flow_token = flow_response.get('token')
-        # if flow_token:
-        #     new_order.flow_token = flow_token
-        #     new_order.save()
-        # else:
-        #     new_order.status = 'REJECTED'
-        #     new_order.save()
-        #     # Considera usar logger.error aquí si tienes logging configurado
-        #     # logger.error(f"Respuesta inesperada de Flow sin token ni código de error: {flow_response} para orden {commerce_order}")
-        #     print(f"ERROR GRABE: Respuesta inesperada de Flow sin token ni código de error: {flow_response} para orden {commerce_order}")
-        #     return Response(
-        #         {"error": "Respuesta inesperada de Flow al crear el pago."},
-        #         status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        #     )
+        if flow_token:
+            new_order.flow_token = flow_token
+            new_order.save()
+        else:
+            new_order.status = 'REJECTED'
+            new_order.save()
+            # Considera usar logger.error aquí si tienes logging configurado
+            # logger.error(f"Respuesta inesperada de Flow sin token ni código de error: {flow_response} para orden {commerce_order}")
+            print(f"ERROR GRABE: Respuesta inesperada de Flow sin token ni código de error: {flow_response} para orden {commerce_order}")
+            return Response(
+                {"error": "Respuesta inesperada de Flow al crear el pago."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
         payment_redirect_url = f"{flow_response.get('url')}?token={flow_token}"
         
