@@ -13,7 +13,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('payments.urls')), # Rutas para nuestro API interno
     
-    path('payment/flow-return-handler/', FlowReturnHandlerView.as_view(), name='flow-return-handler'),
+    path('payment/flow-callback/', FlowReturnHandlerView.as_view(), name='flow-return-handler'),
 
     # Ruta para la página que ve el usuario al volver de Flow
     # path('payment/result/<str:commerce_order>/', PaymentResultView.as_view(), name='payment-result-page'),

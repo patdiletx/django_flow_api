@@ -16,6 +16,7 @@ from .models import Order
 from django.conf import settings
 from django.http import HttpResponse
 from django.http import HttpResponseRedirect
+import urllib.parse
 
 # Configura el logger para este módulo
 logger = logging.getLogger(__name__)
@@ -85,7 +86,7 @@ class CreatePaymentView(APIView):
             'email': "patricio.dilet@gmail.com", # Considera hacerlo dinámico
             'urlConfirmation': f"{public_backend_url}/api/confirm-payment/",
             # --- CAMBIO IMPORTANTE: urlReturn ahora apunta a nuestra nueva vista de estado final ---
-            'urlReturn': f"{public_backend_url}/payment/flow-return-handler/"
+            'urlReturn': f"{public_backend_url}/payment/flow-callback/" 
         }
 
         params['s'] = sign_params(params, secret_key) 
@@ -366,3 +367,84 @@ class FlowReturnHandlerView(View):
     def post(self, request, *args, **kwargs):
         # Por si Flow alguna vez decide hacer POST a esta URL de retorno
         return self.get(request, *args, **kwargs)
+
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class FlowReturnHandlerView(View):
+    """
+    Maneja el retorno del usuario desde Flow.
+    Verifica el estado del pago con Flow usando el token y redirige
+    al usuario al frontend FungiFresh con el resultado.
+    """
+    def get(self, request, *args, **kwargs):
+        flow_token = request.GET.get('token')
+        
+        # Preparamos los parámetros base para la redirección a FungiFresh
+        fungifresh_base_url = settings.FUNGIFRESH_STORE_URL
+        fungifresh_path = "/checkout/confirmation"
+        redirect_params = {
+            'status': 'error', # Por defecto, si algo falla
+            'message': 'Error_desconocido_procesando_el_pago'
+            # 'orderId' se añadirá si podemos obtenerlo
+        }
+
+        if not flow_token:
+            redirect_params['message'] = 'Token_de_Flow_no_recibido'
+            query_string = urllib.parse.urlencode(redirect_params)
+            return HttpResponseRedirect(f"{fungifresh_base_url}{fungifresh_path}?{query_string}")
+
+        # Intentamos obtener nuestra orden local para tener el commerceOrder
+        order_in_db = Order.objects.filter(flow_token=flow_token).first()
+        commerce_order_for_redirect = order_in_db.commerce_order if order_in_db else "desconocido"
+        redirect_params['orderId'] = commerce_order_for_redirect
+
+        # Consultar el estado del pago en Flow usando el token
+        api_key = os.getenv('FLOW_API_KEY')
+        secret_key = os.getenv('FLOW_SECRET_KEY')
+        flow_api_base_url = os.getenv('FLOW_API_URL_PROD', 'https://sandbox.flow.cl/api')
+        flow_status_endpoint_url = f"{flow_api_base_url}/payment/getStatus"
+        
+        params_to_sign = {'apiKey': api_key, 'token': flow_token}
+        signature = sign_params(params_to_sign, secret_key) # Asumiendo que sign_params está disponible
+        
+        params_for_get_status = {'apiKey': api_key, 'token': flow_token, 's': signature}
+
+        try:
+            response = requests.get(flow_status_endpoint_url, params=params_for_get_status)
+            response.raise_for_status()
+            payment_data = response.json()
+
+            flow_status_code = payment_data.get('status') # 1=Pendiente, 2=Pagada, 3=Rechazada, 4=Anulada
+            
+            # Actualizar nuestra BD (opcional aquí, pero bueno para consistencia rápida)
+            # El webhook FlowConfirmationView es el principal para esto.
+            if order_in_db and order_in_db.status == 'PENDING':
+                if flow_status_code == 2: order_in_db.status = 'PAID'
+                elif flow_status_code == 3 or flow_status_code == 4: order_in_db.status = 'REJECTED'
+                order_in_db.save()
+            
+            if flow_status_code == 2: # Pagada
+                redirect_params['status'] = 'success'
+                redirect_params['message'] = 'Tu pago fue exitoso'
+            elif flow_status_code == 3 or flow_status_code == 4: # Rechazada o Anulada
+                redirect_params['status'] = 'failure'
+                redirect_params['message'] = payment_data.get('paymentData', {}).get('user_message', 'Pago rechazado o anulado')
+            elif flow_status_code == 1: # Pendiente
+                redirect_params['status'] = 'pending'
+                redirect_params['message'] = 'Tu pago esta pendiente'
+            else: # Otro estado o error en la respuesta de Flow
+                redirect_params['status'] = 'error'
+                redirect_params['message'] = 'Estado de pago desconocido o invalido desde Flow'
+        
+        except requests.exceptions.RequestException as e:
+            print(f"Error al consultar estado en Flow (ReturnHandler): {e}")
+            redirect_params['status'] = 'error'
+            redirect_params['message'] = 'Fallo en la verificacion del estado con Flow'
+        
+        query_string = urllib.parse.urlencode(redirect_params)
+        return HttpResponseRedirect(f"{fungifresh_base_url}{fungifresh_path}?{query_string}")
+
+    def post(self, request, *args, **kwargs):
+        # Flow usualmente redirige con GET, pero por si acaso manejamos POST igual.
+        return self.get(request, *args, **kwargs)        
