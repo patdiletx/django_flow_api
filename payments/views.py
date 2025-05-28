@@ -172,7 +172,7 @@ class CreatePaymentView(APIView):
             'commerceOrder': str(commerce_order),
             'amount': str(amount),
             'subject': subject,
-            'email': "cliente.de.prueba@example.com", # Hardcoded para simplificar esta prueba
+            'email': "patricio.dilet@gmail.com", # Hardcoded para simplificar esta prueba
             'urlConfirmation': f"{public_backend_url}/api/confirm-payment/", # Debe ser una URL válida y alcanzable por Flow
             'urlReturn': f"{public_backend_url}/payment/result/{commerce_order}/" # Debe ser una URL válida
         }
