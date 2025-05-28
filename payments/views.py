@@ -435,11 +435,8 @@ class FlowReturnHandlerView(View):
 
     def post(self, request, *args, **kwargs):
         return self.handle_return_logic(request)
-
-
-
-
-                redirect_params['message'] = 'Estado de pago desconocido desde Flow'
+        
+        redirect_params['message'] = 'Estado de pago desconocido desde Flow'
         
         except requests.exceptions.RequestException as e:
             print(f"Error al consultar estado en Flow (FlowCallbackView): {e}")
@@ -458,3 +455,86 @@ class FlowReturnHandlerView(View):
 
     def post(self, request, *args, **kwargs):
         return self.handle_callback(request)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class FlowCallbackView(View):
+    # ... (el método __init__ o dispatch si lo tienes) ...
+
+    def handle_callback(self, request): # Nivel 1 de indentación (dentro de la clase)
+        flow_token = request.POST.get('token') or request.GET.get('token') # Nivel 2
+
+        fungifresh_base_url = settings.FUNGIFRESH_STORE_URL # Nivel 2
+        fungifresh_path = "/checkout/confirmation" # Nivel 2
+        redirect_params = { # Nivel 2
+            'status': 'error',
+            'message': 'Error_desconocido_procesando_el_pago',
+            'orderId': 'desconocido'
+        }
+
+        if not flow_token: # Nivel 2
+            redirect_params['message'] = 'Token_de_Flow_no_recibido_en_callback' # Nivel 3
+            # (aquí debería seguir la lógica para redirigir si no hay token)
+        else: # Nivel 2 (este else debe estar alineado con el 'if not flow_token')
+            order_in_db = Order.objects.filter(flow_token=flow_token).first() # Nivel 3
+            if order_in_db: # Nivel 3
+                redirect_params['orderId'] = order_in_db.commerce_order # Nivel 4
+            
+            api_key = os.getenv('FLOW_API_KEY') # Nivel 3
+            secret_key = os.getenv('FLOW_SECRET_KEY') # Nivel 3
+            flow_api_base_url = os.getenv('FLOW_API_URL_PROD', 'https://sandbox.flow.cl/api') # Nivel 3
+            flow_status_endpoint_url = f"{flow_api_base_url}/payment/getStatus" # Nivel 3
+            params_to_sign = {'apiKey': api_key, 'token': flow_token} # Nivel 3
+            signature = sign_params(params_to_sign, secret_key) # Nivel 3
+            params_for_get_status = {'apiKey': api_key, 'token': flow_token, 's': signature} # Nivel 3
+
+            try: # Nivel 3
+                response = requests.get(flow_status_endpoint_url, params=params_for_get_status) # Nivel 4
+                response.raise_for_status() # Nivel 4
+                payment_data = response.json() # Nivel 4
+
+                flow_status_code = payment_data.get('status') # Nivel 4
+                commerce_order_from_flow = payment_data.get('commerceOrder') # Nivel 4
+                if commerce_order_from_flow: # Nivel 4
+                    redirect_params['orderId'] = commerce_order_from_flow # Nivel 5
+
+                order_to_update = Order.objects.filter(flow_token=flow_token).first() # Nivel 4
+                if not order_to_update and commerce_order_from_flow: # Nivel 4
+                    order_to_update = Order.objects.filter(commerce_order=commerce_order_from_flow).first() # Nivel 5
+
+                if order_to_update and (order_to_update.status == 'PENDING' or order_to_update.status != 'PAID'): # Nivel 4
+                    if flow_status_code == 2: order_to_update.status = 'PAID' # Nivel 5
+                    elif flow_status_code == 3 or flow_status_code == 4: order_to_update.status = 'REJECTED' # Nivel 5
+                    if not order_to_update.flow_token: order_to_update.flow_token = flow_token # Nivel 5
+                    order_to_update.save() # Nivel 5
+                
+                if flow_status_code == 2: # Nivel 4
+                    redirect_params['status'] = 'success' # Nivel 5
+                    redirect_params['message'] = 'Tu pago fue exitoso' # Nivel 5
+                elif flow_status_code == 3 or flow_status_code == 4: # Nivel 4
+                    redirect_params['status'] = 'failure' # Nivel 5
+                    redirect_params['message'] = payment_data.get('paymentData', {}).get('user_message', 'Pago rechazado o anulado') # Nivel 5
+                elif flow_status_code == 1: # Nivel 4
+                    redirect_params['status'] = 'pending' # Nivel 5
+                    redirect_params['message'] = 'Tu pago esta pendiente' # Nivel 5
+                else: # Nivel 4 (Este else debe estar alineado con los if/elif anteriores)
+                    redirect_params['status'] = 'error' # Nivel 5
+                    redirect_params['message'] = 'Estado de pago desconocido desde Flow' # Nivel 5 (Esta es la línea 442 que da error)
+            
+            except requests.exceptions.RequestException as e: # Nivel 3 (alineado con el try)
+                print(f"Error al consultar estado en Flow (FlowCallbackView): {e}") # Nivel 4
+                redirect_params['status'] = 'error' # Nivel 4
+                redirect_params['message'] = 'Fallo en la verificacion del estado con Flow' # Nivel 4
+        
+        # Este bloque debe estar al mismo nivel de indentación que el 'if not flow_token' y el 'else' que le sigue
+        if 'message' in redirect_params and redirect_params['message']: # Nivel 2
+            redirect_params['message'] = urllib.parse.quote_plus(str(redirect_params['message'])) # Nivel 3
+
+        query_string = urllib.parse.urlencode(redirect_params) # Nivel 2
+        return HttpResponseRedirect(f"{fungifresh_base_url}{fungifresh_path}?{query_string}") # Nivel 2
+
+    def get(self, request, *args, **kwargs): # Nivel 1
+        return self.handle_callback(request) # Nivel 2
+
+    def post(self, request, *args, **kwargs): # Nivel 1
+        return self.handle_callback(request) # Nivel 2
