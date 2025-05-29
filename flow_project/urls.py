@@ -7,6 +7,8 @@ urlpatterns = [
     path('', health_check_view, name='health_check'),
     path('admin/', admin.site.urls),
     path('api/', include('payments.urls')), 
+
+    path('api/products/', include('products.urls', namespace='products-api')),
     
     # --- RUTA para el callback de Flow (urlReturn para Flow) ---
     path('payment/flow-callback/', FlowCallbackView.as_view(), name='flow-callback'),
