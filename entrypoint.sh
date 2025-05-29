@@ -8,6 +8,10 @@ set -e
 echo "Aplicando migraciones de base de datos..."
 python manage.py migrate --noinput
 
+echo "Recolectando archivos estáticos..." # <--- LÍNEA NUEVA
+python manage.py collectstatic --noinput  # <--- LÍNEA NUEVA
+
+
 # Iniciar Gunicorn (el comando que ya teníamos)
 # Usamos 'exec' para que Gunicorn reemplace este script y se convierta en el proceso principal (PID 1),
 # lo cual es importante para que maneje correctamente las señales del sistema (como cuando Render lo detiene).
