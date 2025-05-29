@@ -377,6 +377,7 @@ class FlowConfirmationView(APIView):
                             "fungigrow_return_url": order_to_update.fungigrow_return_url,
                             "order_created_at": order_to_update.created_at.isoformat() if order_to_update.created_at else None,
                             "order_updated_at": order_to_update.updated_at.isoformat() if order_to_update.updated_at else None,
+                            "store_owner_email_recipient": settings.STORE_OWNER_EMAIL,
                         }
                         try:
                             logger.info(f"FlowConfirmationView: Enviando datos a n8n para orden {commerce_order_id}...")
