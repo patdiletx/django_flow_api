@@ -26,6 +26,9 @@ class Order(models.Model):
     shipping_region = models.CharField(max_length=100, blank=True, null=True)
     shipping_phone = models.CharField(max_length=20, blank=True, null=True)
     
+    customer_email = models.EmailField(max_length=254, blank=True, null=True) # Email del cliente
+
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
