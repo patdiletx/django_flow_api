@@ -99,6 +99,23 @@ DATABASES = {
 }
 
 
+
+# --- CONFIGURACIÓN DE EMAIL ---
+# Para desarrollo local, puedes dejar DJANGO_EMAIL_BACKEND sin definir en .env
+# y se usará el console backend (los emails se imprimen en la terminal).
+EMAIL_BACKEND = os.getenv('DJANGO_EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
+EMAIL_HOST = os.getenv('EMAIL_HOST') # Ej: 'smtp.sendgrid.net'
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587)) # 587 para TLS, 465 para SSL
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
+EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'False') == 'True' # Solo uno de TLS o SSL debe ser True
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER') # Ej: 'apikey' para SendGrid, o tu email para Gmail
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD') # La API Key de SendGrid, o contraseña de app para Gmail
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'patricio.dilet@gmail.com') # Email "De" por defecto
+
+# Email del dueño de la tienda para notificaciones de venta
+STORE_OWNER_EMAIL = os.getenv('STORE_OWNER_EMAIL', 'patricio.dilet@gmail.com')
+
+
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 
