@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'rest_framework',  # El framework para crear APIs
     'corsheaders',
     'payments',
+    'products',
 ]
 
 MIDDLEWARE = [
