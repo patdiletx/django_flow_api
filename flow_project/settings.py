@@ -28,6 +28,11 @@ DEBUG = os.getenv('DJANGO_DEBUG', 'True') == 'True'
 ALLOWED_HOSTS_STRING = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost')
 ALLOWED_HOSTS = ALLOWED_HOSTS_STRING.split(',') if ALLOWED_HOSTS_STRING else []
 
+CSRF_TRUSTED_ORIGINS = [
+    'https://django-flow-api.onrender.com',
+    # Si tuvieras un dominio personalizado en el futuro, como 'https://www.tuempresa.com', lo añadirías aquí.
+]
+
 PUBLIC_URL_BASE = os.getenv('PUBLIC_URL_BASE', f"http://localhost:8000")
 
 FUNGIFRESH_STORE_URL = os.getenv('FUNGIFRESH_STORE_URL', 'http://localhost:3000') # URL base de la tienda frontend
