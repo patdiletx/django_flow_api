@@ -115,6 +115,8 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'patricio.dilet@gmail.com')
 # Email del dueño de la tienda para notificaciones de venta
 STORE_OWNER_EMAIL = os.getenv('STORE_OWNER_EMAIL', 'patricio.dilet@gmail.com')
 
+N8N_SALE_WEBHOOK_URL = os.getenv('N8N_SALE_WEBHOOK_URL')
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators

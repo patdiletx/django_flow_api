@@ -149,14 +149,138 @@ class CreatePaymentView(APIView):
             return Response({"error": f"Error de conexión al contactar a Flow: {e}"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
+# @method_decorator(csrf_exempt, name='dispatch')
+# class FlowConfirmationView(APIView):
+#     """
+#     Webhook endpoint que Flow llama para confirmar el estado de un pago.
+#     Esta vista es crucial y debe ser robusta e idempotente.
+#     """
+#     def post(self, request, *args, **kwargs):
+#         # Flow envía los datos como form-data (request.POST) para el webhook de confirmación
+#         flow_token = request.POST.get('token')
+
+#         if not flow_token:
+#             logger.warning("FlowConfirmationView: Recibida confirmación de Flow SIN token.")
+#             return Response({"error": "Token no proporcionado por Flow"}, status=status.HTTP_400_BAD_REQUEST)
+
+#         logger.info(f"FlowConfirmationView: Recibido token de confirmación de Flow: {flow_token}")
+
+#         try:
+#             api_key = os.getenv('FLOW_API_KEY')
+#             secret_key = os.getenv('FLOW_SECRET_KEY')
+#             flow_api_base_url = os.getenv('FLOW_API_URL_PROD', 'https://sandbox.flow.cl/api')
+#             flow_status_endpoint_url = f"{flow_api_base_url}/payment/getStatus"
+            
+#             params_to_sign_for_get_status = {'apiKey': api_key, 'token': flow_token}
+#             signature_for_get_status = sign_params(params_to_sign_for_get_status, secret_key)
+            
+#             params_for_get_status_call = {
+#                 'apiKey': api_key,
+#                 'token': flow_token,
+#                 's': signature_for_get_status
+#             }
+
+#             # Llamada a Flow para obtener el estado REAL y AUTORITATIVO del pago
+#             response_flow_status = requests.get(flow_status_endpoint_url, params=params_for_get_status_call)
+#             response_flow_status.raise_for_status() # Lanza HTTPError para respuestas 4xx/5xx de Flow
+#             payment_data_from_flow = response_flow_status.json()
+
+#             commerce_order_id = payment_data_from_flow.get('commerceOrder')
+#             flow_status_code = payment_data_from_flow.get('status') # 1=Pendiente, 2=Pagada, 3=Rechazada, 4=Anulada
+            
+#             # El token que Flow devuelve en getStatus es el mismo que usamos para consultar
+#             # flow_payment_token_from_getstatus = payment_data_from_flow.get('token') 
+
+#             if not commerce_order_id:
+#                 logger.error(f"FlowConfirmationView: Flow no devolvió commerceOrder para el token {flow_token}. Respuesta de Flow: {payment_data_from_flow}")
+#                 # Respondemos OK a Flow para que no reintente, pero logueamos el error severo.
+#                 return Response(status=status.HTTP_200_OK) 
+
+#             logger.info(f"FlowConfirmationView: Estado de Flow para orden {commerce_order_id} (token {flow_token}): Código {flow_status_code}")
+
+#             with transaction.atomic():
+#                 order_to_update = None
+#                 try:
+#                     # Buscamos la orden por commerceOrder, que es nuestro ID principal.
+#                     order_to_update = Order.objects.select_for_update().get(commerce_order=commerce_order_id)
+#                 except Order.DoesNotExist:
+#                     # Si no la encontramos por commerceOrder (raro, pero podría pasar si Flow envía un commerceOrder diferente al que creamos)
+#                     # podríamos intentar buscarla por flow_token si lo guardamos en la creación.
+#                     # Esto asume que el flow_token guardado en la creación es el mismo que llega por el webhook.
+#                     logger.warning(f"FlowConfirmationView: Orden {commerce_order_id} no encontrada por commerce_order. Intentando buscar por flow_token {flow_token} (si está disponible en el modelo).")
+#                     # order_to_update = Order.objects.select_for_update().filter(flow_token=flow_token).first() # Descomentar si guardas token en creación
+#                     if not order_to_update:
+#                         logger.error(f"FlowConfirmationView: Orden {commerce_order_id} (token {flow_token}) confirmada por Flow NO FUE ENCONTRADA en la BD por ningún medio.")
+#                         return Response(status=status.HTTP_200_OK) # OK para Flow, pero problema interno grave.
+
+#                 previous_status = order_to_update.status
+
+#                 # Guardar/Actualizar el token de Flow en nuestra orden por si no lo teníamos
+#                 if not order_to_update.flow_token or order_to_update.flow_token != flow_token:
+#                     order_to_update.flow_token = flow_token
+                
+#                 # Lógica de Idempotencia: Solo procesar si el estado realmente necesita actualizarse.
+#                 if order_to_update.status == 'PAID' and flow_status_code == 2:
+#                     logger.info(f"FlowConfirmationView: Orden {commerce_order_id} ya está PAGADA. No se realizan acciones adicionales.")
+#                 elif order_to_update.status == 'REJECTED' and (flow_status_code == 3 or flow_status_code == 4):
+#                     logger.info(f"FlowConfirmationView: Orden {commerce_order_id} ya está RECHAZADA. No se realizan acciones adicionales.")
+#                 else:
+#                     # El estado actual de la orden no es final o no coincide con el de Flow, procedemos a actualizar.
+#                     if flow_status_code == 2: # Pagada
+#                         order_to_update.status = 'PAID'
+#                         logger.info(f"FlowConfirmationView: ✅ Orden {commerce_order_id} actualizada a PAGADA en BD.")
+#                     elif flow_status_code == 3 or flow_status_code == 4: # Rechazada o Anulada
+#                         order_to_update.status = 'REJECTED'
+#                         logger.info(f"FlowConfirmationView: ❌ Orden {commerce_order_id} actualizada a RECHAZADA en BD.")
+#                     elif flow_status_code == 1: # Pendiente
+#                         # Si ya estaba PENDING, no hacemos nada. Si estaba en otro estado (ej. ERROR)
+#                         # y Flow dice PENDING, podríamos querer registrarlo o actualizarlo.
+#                         # Por ahora, si es PENDING y ya estaba PENDING, no hay cambio.
+#                         if order_to_update.status != 'PENDING':
+#                            # order_to_update.status = 'PENDING' # Decide si quieres actualizar a PENDING
+#                            logger.info(f"FlowConfirmationView: ⏳ Orden {commerce_order_id} está PENDIENTE según Flow. Estado actual: {previous_status}.")
+#                         else:
+#                            logger.info(f"FlowConfirmationView: ⏳ Orden {commerce_order_id} ya estaba PENDIENTE.")
+#                     else:
+#                         logger.warning(f"FlowConfirmationView: Estado desconocido {flow_status_code} de Flow para orden {commerce_order_id}. Se marcará como ERROR.")
+#                         order_to_update.status = 'ERROR' # Usando el estado 'ERROR' que definimos en el modelo
+
+#                     order_to_update.save()
+
+#                     # Envío de emails si el estado cambió a PAID (y no lo estaba antes)
+#                     if order_to_update.status == 'PAID' and previous_status != 'PAID':
+#                         logger.info(f"FlowConfirmationView: Enviando emails para orden PAGADA {commerce_order_id}...")
+#                         send_new_sale_to_owner(order_to_update)
+#                         send_payment_confirmation_to_customer(order_to_update)
+#                     # O si cambió a REJECTED y antes estaba PENDING
+#                     elif order_to_update.status == 'REJECTED' and previous_status == 'PENDING':
+#                         logger.info(f"FlowConfirmationView: Enviando email de rechazo para orden {commerce_order_id}...")
+#                         send_payment_confirmation_to_customer(order_to_update) 
+
+#         except requests.exceptions.HTTPError as http_err:
+#             error_text = http_err.response.text[:200] if http_err.response else str(http_err)
+#             logger.error(f"FlowConfirmationView: HTTPError al contactar Flow para getStatus (token {flow_token}): {http_err.response.status_code if http_err.response else 'N/A'} - {error_text}")
+#             if http_err.response and http_err.response.status_code == 400:
+#                 return Response({"error": "Token inválido para Flow getStatus o petición malformada"}, status=status.HTTP_400_BAD_REQUEST)
+#             return Response({"error": "Error comunicándose con Flow"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+#         except requests.exceptions.RequestException as e:
+#             logger.error(f"FlowConfirmationView: RequestException al contactar Flow para getStatus (token {flow_token}): {e}")
+#             return Response({"error": "Error de red comunicándose con Flow"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+#         except Exception as e:
+#             logger.critical(f"FlowConfirmationView: Error crítico inesperado procesando confirmación (token {flow_token}): {e}", exc_info=True)
+#             return Response({"error": "Error interno del servidor"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+#         # Flow espera un 200 OK para saber que recibimos y procesamos la notificación.
+#         return Response(status=status.HTTP_200_OK)
+
 @method_decorator(csrf_exempt, name='dispatch')
 class FlowConfirmationView(APIView):
     """
     Webhook endpoint que Flow llama para confirmar el estado de un pago.
-    Esta vista es crucial y debe ser robusta e idempotente.
+    Verifica el estado, actualiza la BD, y si el pago es exitoso,
+    llama a un webhook de n8n para manejar notificaciones y otros flujos.
     """
     def post(self, request, *args, **kwargs):
-        # Flow envía los datos como form-data (request.POST) para el webhook de confirmación
         flow_token = request.POST.get('token')
 
         if not flow_token:
@@ -180,20 +304,15 @@ class FlowConfirmationView(APIView):
                 's': signature_for_get_status
             }
 
-            # Llamada a Flow para obtener el estado REAL y AUTORITATIVO del pago
             response_flow_status = requests.get(flow_status_endpoint_url, params=params_for_get_status_call)
-            response_flow_status.raise_for_status() # Lanza HTTPError para respuestas 4xx/5xx de Flow
+            response_flow_status.raise_for_status()
             payment_data_from_flow = response_flow_status.json()
 
             commerce_order_id = payment_data_from_flow.get('commerceOrder')
-            flow_status_code = payment_data_from_flow.get('status') # 1=Pendiente, 2=Pagada, 3=Rechazada, 4=Anulada
-            
-            # El token que Flow devuelve en getStatus es el mismo que usamos para consultar
-            # flow_payment_token_from_getstatus = payment_data_from_flow.get('token') 
+            flow_status_code = payment_data_from_flow.get('status')
 
             if not commerce_order_id:
-                logger.error(f"FlowConfirmationView: Flow no devolvió commerceOrder para el token {flow_token}. Respuesta de Flow: {payment_data_from_flow}")
-                # Respondemos OK a Flow para que no reintente, pero logueamos el error severo.
+                logger.error(f"FlowConfirmationView: Flow no devolvió commerceOrder para token {flow_token}. Respuesta: {payment_data_from_flow}")
                 return Response(status=status.HTTP_200_OK) 
 
             logger.info(f"FlowConfirmationView: Estado de Flow para orden {commerce_order_id} (token {flow_token}): Código {flow_status_code}")
@@ -201,31 +320,22 @@ class FlowConfirmationView(APIView):
             with transaction.atomic():
                 order_to_update = None
                 try:
-                    # Buscamos la orden por commerceOrder, que es nuestro ID principal.
                     order_to_update = Order.objects.select_for_update().get(commerce_order=commerce_order_id)
                 except Order.DoesNotExist:
-                    # Si no la encontramos por commerceOrder (raro, pero podría pasar si Flow envía un commerceOrder diferente al que creamos)
-                    # podríamos intentar buscarla por flow_token si lo guardamos en la creación.
-                    # Esto asume que el flow_token guardado en la creación es el mismo que llega por el webhook.
-                    logger.warning(f"FlowConfirmationView: Orden {commerce_order_id} no encontrada por commerce_order. Intentando buscar por flow_token {flow_token} (si está disponible en el modelo).")
-                    # order_to_update = Order.objects.select_for_update().filter(flow_token=flow_token).first() # Descomentar si guardas token en creación
-                    if not order_to_update:
-                        logger.error(f"FlowConfirmationView: Orden {commerce_order_id} (token {flow_token}) confirmada por Flow NO FUE ENCONTRADA en la BD por ningún medio.")
-                        return Response(status=status.HTTP_200_OK) # OK para Flow, pero problema interno grave.
+                    logger.error(f"FlowConfirmationView: Orden {commerce_order_id} (token {flow_token}) confirmada por Flow NO ENCONTRADA en BD.")
+                    return Response(status=status.HTTP_200_OK)
 
                 previous_status = order_to_update.status
-
-                # Guardar/Actualizar el token de Flow en nuestra orden por si no lo teníamos
                 if not order_to_update.flow_token or order_to_update.flow_token != flow_token:
                     order_to_update.flow_token = flow_token
                 
-                # Lógica de Idempotencia: Solo procesar si el estado realmente necesita actualizarse.
+                should_trigger_n8n = False
+                
                 if order_to_update.status == 'PAID' and flow_status_code == 2:
-                    logger.info(f"FlowConfirmationView: Orden {commerce_order_id} ya está PAGADA. No se realizan acciones adicionales.")
+                    logger.info(f"FlowConfirmationView: Orden {commerce_order_id} ya está PAGADA. No se realizan acciones adicionales de BD ni n8n.")
                 elif order_to_update.status == 'REJECTED' and (flow_status_code == 3 or flow_status_code == 4):
-                    logger.info(f"FlowConfirmationView: Orden {commerce_order_id} ya está RECHAZADA. No se realizan acciones adicionales.")
+                    logger.info(f"FlowConfirmationView: Orden {commerce_order_id} ya está RECHAZADA. No se realizan acciones adicionales de BD.")
                 else:
-                    # El estado actual de la orden no es final o no coincide con el de Flow, procedemos a actualizar.
                     if flow_status_code == 2: # Pagada
                         order_to_update.status = 'PAID'
                         logger.info(f"FlowConfirmationView: ✅ Orden {commerce_order_id} actualizada a PAGADA en BD.")
@@ -233,46 +343,74 @@ class FlowConfirmationView(APIView):
                         order_to_update.status = 'REJECTED'
                         logger.info(f"FlowConfirmationView: ❌ Orden {commerce_order_id} actualizada a RECHAZADA en BD.")
                     elif flow_status_code == 1: # Pendiente
-                        # Si ya estaba PENDING, no hacemos nada. Si estaba en otro estado (ej. ERROR)
-                        # y Flow dice PENDING, podríamos querer registrarlo o actualizarlo.
-                        # Por ahora, si es PENDING y ya estaba PENDING, no hay cambio.
-                        if order_to_update.status != 'PENDING':
-                           # order_to_update.status = 'PENDING' # Decide si quieres actualizar a PENDING
-                           logger.info(f"FlowConfirmationView: ⏳ Orden {commerce_order_id} está PENDIENTE según Flow. Estado actual: {previous_status}.")
-                        else:
-                           logger.info(f"FlowConfirmationView: ⏳ Orden {commerce_order_id} ya estaba PENDIENTE.")
+                        logger.info(f"FlowConfirmationView: ⏳ Orden {commerce_order_id} PENDIENTE según Flow. Estado actual BD: {previous_status}.")
                     else:
-                        logger.warning(f"FlowConfirmationView: Estado desconocido {flow_status_code} de Flow para orden {commerce_order_id}. Se marcará como ERROR.")
-                        order_to_update.status = 'ERROR' # Usando el estado 'ERROR' que definimos en el modelo
+                        logger.warning(f"FlowConfirmationView: Estado desconocido {flow_status_code} de Flow para orden {commerce_order_id}. Se marca como ERROR.")
+                        order_to_update.status = 'ERROR'
 
                     order_to_update.save()
 
-                    # Envío de emails si el estado cambió a PAID (y no lo estaba antes)
                     if order_to_update.status == 'PAID' and previous_status != 'PAID':
-                        logger.info(f"FlowConfirmationView: Enviando emails para orden PAGADA {commerce_order_id}...")
-                        send_new_sale_to_owner(order_to_update)
-                        send_payment_confirmation_to_customer(order_to_update)
-                    # O si cambió a REJECTED y antes estaba PENDING
-                    elif order_to_update.status == 'REJECTED' and previous_status == 'PENDING':
-                        logger.info(f"FlowConfirmationView: Enviando email de rechazo para orden {commerce_order_id}...")
-                        send_payment_confirmation_to_customer(order_to_update) 
+                        should_trigger_n8n = True
+                    # Podrías decidir si también quieres notificar a n8n para pagos RECHAZADOS
+                    # elif order_to_update.status == 'REJECTED' and previous_status == 'PENDING':
+                    #     should_trigger_n8n = True # O un webhook diferente para fallos
+
+                if should_trigger_n8n:
+                    n8n_webhook_url = os.getenv('N8N_SALE_WEBHOOK_URL')
+                    if n8n_webhook_url:
+                        payload_to_n8n = {
+                            "commerceOrder": order_to_update.commerce_order,
+                            "amount": str(order_to_update.amount),
+                            "customer_email": order_to_update.customer_email,
+                            "flow_token": order_to_update.flow_token,
+                            "payment_status_flow_code": flow_status_code,
+                            "payment_status_internal": order_to_update.status,
+                            "shipping_details": {
+                                "nombreCompleto": order_to_update.shipping_name,
+                                "rut": order_to_update.shipping_rut,
+                                "direccion": order_to_update.shipping_address,
+                                "comuna": order_to_update.shipping_commune,
+                                "region": order_to_update.shipping_region,
+                                "telefono": order_to_update.shipping_phone,
+                            },
+                            "fungigrow_return_url": order_to_update.fungigrow_return_url,
+                            "order_created_at": order_to_update.created_at.isoformat() if order_to_update.created_at else None,
+                            "order_updated_at": order_to_update.updated_at.isoformat() if order_to_update.updated_at else None,
+                        }
+                        try:
+                            logger.info(f"FlowConfirmationView: Enviando datos a n8n para orden {commerce_order_id}...")
+                            requests.post(n8n_webhook_url, json=payload_to_n8n, timeout=10) 
+                            logger.info(f"FlowConfirmationView: Datos enviados a n8n para orden {commerce_order_id}.")
+                        except requests.exceptions.RequestException as n8n_error:
+                            logger.error(f"FlowConfirmationView: Error al enviar datos a n8n para orden {commerce_order_id}: {n8n_error}")
+                    else:
+                        logger.warning(f"FlowConfirmationView: N8N_SALE_WEBHOOK_URL no está configurada. No se puede notificar a n8n para orden {commerce_order_id}.")
 
         except requests.exceptions.HTTPError as http_err:
             error_text = http_err.response.text[:200] if http_err.response else str(http_err)
             logger.error(f"FlowConfirmationView: HTTPError al contactar Flow para getStatus (token {flow_token}): {http_err.response.status_code if http_err.response else 'N/A'} - {error_text}")
-            if http_err.response and http_err.response.status_code == 400:
+            # Determinar si es un error que Flow debería reintentar o un error de nuestra parte
+            if http_err.response and http_err.response.status_code == 400: # Error del cliente (ej. token inválido)
                 return Response({"error": "Token inválido para Flow getStatus o petición malformada"}, status=status.HTTP_400_BAD_REQUEST)
-            return Response({"error": "Error comunicándose con Flow"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        except requests.exceptions.RequestException as e:
+            return Response({"error": "Error comunicándose con Flow"}, status=status.HTTP_503_SERVICE_UNAVAILABLE) # Error del servidor o red
+        
+        except requests.exceptions.RequestException as e: # Errores de conexión, DNS, etc.
             logger.error(f"FlowConfirmationView: RequestException al contactar Flow para getStatus (token {flow_token}): {e}")
             return Response({"error": "Error de red comunicándose con Flow"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        
+        except Order.DoesNotExist: # Esto no debería pasar si la lógica de búsqueda es correcta.
+            logger.error(f"FlowConfirmationView: CRÍTICO - Orden no encontrada después de getStatus exitoso para commerceOrder {commerce_order_id if 'commerce_order_id' in locals() else 'desconocido'} (token {flow_token}).")
+            return Response(status=status.HTTP_200_OK) # OK a Flow para evitar reintentos, pero es un error grave nuestro.
+
         except Exception as e:
             logger.critical(f"FlowConfirmationView: Error crítico inesperado procesando confirmación (token {flow_token}): {e}", exc_info=True)
             return Response({"error": "Error interno del servidor"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        # Flow espera un 200 OK para saber que recibimos y procesamos la notificación.
-        return Response(status=status.HTTP_200_OK)
-        
+        # Siempre respondemos 200 OK a Flow si llegamos hasta aquí sin errores graves que requieran reintento de Flow.
+        return Response(status=status.HTTP_200_OK)        
+
+
 
 class OrderStatusView(APIView):
     """
