@@ -683,3 +683,53 @@ class FlowCallbackView(View): # Renombrada para claridad y usando View base de D
         # Nivel de indentación 1 (dentro de la clase)
         # Flow usualmente redirige con GET, pero por si acaso manejamos POST igual.
         return self.handle_callback(request) # Nivel 2
+
+
+
+class QueryOrderStatusView(APIView):
+    """
+    Permite consultar el estado de una o más órdenes usando
+    commerce_order, customer_email o shipping_phone como parámetro query.
+    """
+    def get(self, request, *args, **kwargs):
+        commerce_order = request.query_params.get('commerce_order', None)
+        email = request.query_params.get('email', None)
+        phone = request.query_params.get('phone', None)
+
+        orders_query = None
+
+        if commerce_order:
+            orders_query = Order.objects.filter(commerce_order__iexact=commerce_order)
+        elif email:
+            orders_query = Order.objects.filter(customer_email__iexact=email).order_by('-created_at')
+        elif phone:
+            # Considerar normalizar el 'phone' si los formatos pueden variar mucho.
+            # Por ahora, búsqueda exacta (ignorando mayúsculas/minúsculas si es relevante, aunque para teléfonos no tanto).
+            # Si guardas teléfonos con '+569...' el usuario debe proveerlo así.
+            orders_query = Order.objects.filter(shipping_phone=phone).order_by('-created_at')
+        else:
+            return Response(
+                {"error": "Debes proporcionar un parámetro de búsqueda: commerce_order, email, o phone."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not orders_query: # Si el filtro no arrojó nada (aunque el query en sí era válido)
+            return Response([], status=status.HTTP_200_OK) # Devolver lista vacía en lugar de 404
+
+        # Preparamos una lista simplificada de los resultados
+        results = []
+        for order in orders_query:
+            results.append({
+                "commerce_order": order.commerce_order,
+                "status": order.status,
+                "created_at": order.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                "amount": str(order.amount), # Convertir Decimal a string
+                "subject": order.shipping_name # O un resumen de productos si lo tuvieras
+                                               # Por ahora, el nombre del destinatario podría servir
+            })
+
+        if not results: # Si después de procesar, la lista sigue vacía (ej. por un error interno no capturado)
+             return Response([], status=status.HTTP_200_OK)
+
+
+        return Response(results, status=status.HTTP_200_OK)
