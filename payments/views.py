@@ -89,7 +89,7 @@ class CreatePaymentView(APIView):
 
         api_key = os.getenv('FLOW_API_KEY')
         secret_key = os.getenv('FLOW_SECRET_KEY')
-        flow_api_base_url = os.getenv('FLOW_API_URL_PROD', 'https://sandbox.flow.cl/api')
+        flow_api_base_url = os.getenv('FLOW_API_URL_PROD', 'https://flow.cl/api')
         flow_payment_create_endpoint_url = f"{flow_api_base_url}/payment/create"
 
         public_backend_url = settings.PUBLIC_URL_BASE # Nuestra URL base de la API Django
@@ -292,7 +292,7 @@ class FlowConfirmationView(APIView):
         try:
             api_key = os.getenv('FLOW_API_KEY')
             secret_key = os.getenv('FLOW_SECRET_KEY')
-            flow_api_base_url = os.getenv('FLOW_API_URL_PROD', 'https://sandbox.flow.cl/api')
+            flow_api_base_url = os.getenv('FLOW_API_URL_PROD', 'https://flow.cl/api')
             flow_status_endpoint_url = f"{flow_api_base_url}/payment/getStatus"
             
             params_to_sign_for_get_status = {'apiKey': api_key, 'token': flow_token}
@@ -508,7 +508,7 @@ class FlowReturnHandlerView(View):
         # Consultar el estado del pago en Flow usando el token
         api_key = os.getenv('FLOW_API_KEY')
         secret_key = os.getenv('FLOW_SECRET_KEY')
-        flow_api_base_url = os.getenv('FLOW_API_URL_PROD', 'https://sandbox.flow.cl/api')
+        flow_api_base_url = os.getenv('FLOW_API_URL_PROD', 'https://flow.cl/api')
         flow_status_endpoint_url = f"{flow_api_base_url}/payment/getStatus"
         
         params_to_sign = {'apiKey': api_key, 'token': flow_token}
@@ -602,7 +602,7 @@ class FlowCallbackView(View): # Renombrada para claridad y usando View base de D
         # Consultar el estado REAL del pago en Flow usando el token
         api_key = os.getenv('FLOW_API_KEY')
         secret_key = os.getenv('FLOW_SECRET_KEY')
-        flow_api_base_url = os.getenv('FLOW_API_URL_PROD', 'https://sandbox.flow.cl/api')
+        flow_api_base_url = os.getenv('FLOW_API_URL_PROD', 'https://flow.cl/api')
         flow_status_endpoint_url = f"{flow_api_base_url}/payment/getStatus"
         
         params_to_sign = {'apiKey': api_key, 'token': flow_token}

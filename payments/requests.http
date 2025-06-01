@@ -1,20 +1,95 @@
-### Crear un nuevo pago en Flow
-POST http://localhost:8000/api/create-payment/
+# ### Crear un nuevo pago en Flow
+# POST http://localhost:8000/api/create-payment/
+# Content-Type: application/json
+
+# {
+#     "amount": 3000,
+#     "commerceOrder": "124",
+#     "subject": "Compra con una herramienta genial"
+# }
+
+
+# ### C 
+# POST https://django-flow-api.onrender.com/api/create-payment/
+# Content-Type: application/json
+
+# {
+#     "amount": 1000,
+#     "commerceOrder": "1996",
+#     "subject": "Compra con una herramienta genial",
+#     "return_url":"https://django-flow-api.onrender.com",
+#     "customer_email": "patricio.dilet@gmail.com"
+# }
+
+
+# Variable para la URL base de tu API
+# Reemplaza con la URL de tu servicio en Render.com o localhost para pruebas locales
+# @baseUrl = https://django-flow-api.onrender.com
+# @baseUrl = http://localhost:8000
+
+
+### 1. Listar todos los productos activos
+# Este endpoint debería devolver un array JSON con tus productos.
+# GET {{baseUrl}}/api/products/
+# Content-Type: application/json
+
+
+### 2. Ver detalle de un producto específico por su slug
+# RECUERDA: Reemplaza '<el-slug-de-tu-producto>' con un slug real de tu base de datos.
+# Por ejemplo, si creaste un producto con nombre "Kit de Cultivo Ostra" y slug "kit-cultivo-ostra",
+# la URL sería: {{baseUrl}}/api/products/kit-cultivo-ostra/
+# GET {{baseUrl}}/api/products/kit-cultivo-ostra-rosado
+# Content-Type: application/json
+
+
+### Ejemplo de un producto específico (descomenta y ajusta el slug):
+# GET {{baseUrl}}/api/products/kit-cultivo-ostra-rosado/
+# Content-Type: application/json
+
+
+
+
+
+
+
+# Variable para la URL base de tu API
+# Reemplaza con la URL de tu servicio en Render.com
+@baseUrl = https://django-flow-api.onrender.com
+# Para pruebas locales, sería:
+# @baseUrl = http://localhost:8000
+
+### 1. Consultar estado de orden por 'commerce_order'
+# Reemplaza 'FUNGIGROW-12345' con un ID de orden real de tu base de datos.
+GET {{baseUrl}}/api/query-order-status/?commerce_order=FUNGIGROW-1748544204786
 Content-Type: application/json
 
-{
-    "amount": 3000,
-    "commerceOrder": "124",
-    "subject": "Compra con una herramienta genial"
-}
 
-
-### C 
-POST https://django-flow-api.onrender.com/api/create-payment/
+### 2. Consultar estado de orden por 'email'
+# Reemplaza 'cliente.real@example.com' con un email real de una orden en tu base de datos.
+# Esto podría devolver una lista si hay múltiples órdenes con el mismo email.
+GET {{baseUrl}}/api/query-order-status/?email=patricio.dilet@gmail.com
 Content-Type: application/json
 
-{
-    "amount": 1000,
-    "commerceOrder": "994",
-    "subject": "Compra con una herramienta genial"
-}
+
+### 3. Consultar estado de orden por 'phone'
+# Reemplaza '+56912345678' con un número de teléfono real (en el formato exacto en que se guardó)
+# de una orden en tu base de datos. El '+' debe ser codificado como %2B si lo escribes directo en una URL,
+# pero REST Client usualmente maneja bien los caracteres especiales en la variable.
+# Si tienes '+' en el número, prueba con y sin %2B.
+# Ejemplo con el número +56912345678 (codificado):
+GET {{baseUrl}}/api/query-order-status/?phone=%2B56928207086
+Content-Type: application/json
+
+# Ejemplo con el número +56912345678 (sin codificar, REST client podría manejarlo):
+# GET {{baseUrl}}/api/query-order-status/?phone=+56912345678
+# Content-Type: application/json
+
+
+### 4. Consultar con un email que NO existe (espera una lista vacía)
+GET {{baseUrl}}/api/query-order-status/?email=noexiste@example.com
+Content-Type: application/json
+
+
+### 5. Consultar sin ningún parámetro (espera un error 400)
+GET {{baseUrl}}/api/query-order-status/
+Content-Type: application/json
