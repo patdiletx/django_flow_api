@@ -17,5 +17,7 @@ class ProductSerializer(serializers.ModelSerializer):
             'difficulty_frontend', 
             'rating_frontend',
             'image_alt_frontend', 
-            'data_ai_hint_frontend'
+            'data_ai_hint_frontend',
+            'additional_image_urls',
+            'video_urls'
         ]

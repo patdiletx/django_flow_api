@@ -18,6 +18,15 @@ class ProductAdmin(admin.ModelAdmin):
         ('Descripción y Contenido', {
             'fields': ('description', 'image_url', 'image_alt_frontend')
         }),
+        ('Media Adicional (Imágenes y Videos)', {
+            'fields': ('additional_image_urls', 'video_urls'),
+            'description': """
+                <p>Para <strong>URLs de Imágenes Adicionales</strong> y <strong>URLs de Videos</strong>, ingrese una lista JSON válida.</p>
+                <p>Ejemplo para imágenes: <code>["https://ejemplo.com/img1.jpg", "https://ejemplo.com/img2.png"]</code></p>
+                <p>Ejemplo para videos: <code>["https://www.youtube.com/watch?v=VIDEO_ID", "https://vimeo.com/VIDEO_ID"]</code></p>
+                <p>Si no hay, deje como <code>null</code> o <code>[]</code>.</p>
+            """
+        }),
         ('Precio y Stock', {
             'fields': ('price', 'stock', 'weight')
         }),
