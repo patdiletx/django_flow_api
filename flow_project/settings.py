@@ -221,6 +221,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",                 # Ejemplo si usan React/Vue en el puerto 3000
     "http://localhost:8080",                 # Ejemplo para otro puerto común de desarrollo frontend
     # Añade otros orígenes si es necesario
+    "https://fungigrow.cl",
 ]
 
 # Opcional: Si necesitas permitir todos los subdominios de un dominio principal:
