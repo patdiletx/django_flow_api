@@ -1,6 +1,7 @@
 # payments/models.py
 
 from django.db import models
+from django.utils import timezone
 
 class Order(models.Model):
     STATUS_CHOICES = [
@@ -40,6 +41,65 @@ class Order(models.Model):
 
 
 class DiscountCode(models.Model):
+    DISCOUNT_TYPE_CHOICES = [
+        ('percentage', 'Porcentaje'),
+        ('fixed_amount', 'Monto Fijo'),
+    ]
+
+    code = models.CharField(max_length=50, unique=True, db_index=True, verbose_name="Código de Descuento")
+    discount_type = models.CharField(max_length=20, choices=DISCOUNT_TYPE_CHOICES, verbose_name="Tipo de Descuento")
+    discount_value = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Valor del Descuento")
+    is_active = models.BooleanField(default=True, verbose_name="¿Está Activo?")
+    valid_from = models.DateTimeField(null=True, blank=True, verbose_name="Válido Desde")
+    valid_until = models.DateTimeField(null=True, blank=True, verbose_name="Válido Hasta")
+    min_purchase_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Monto Mínimo de Compra (subtotal productos)")
+    usage_limit = models.PositiveIntegerField(null=True, blank=True, verbose_name="Límite de Usos Totales")
+    times_used = models.PositiveIntegerField(default=0, verbose_name="Veces Usado")
+    max_discount_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Monto Máximo de Descuento (para porcentaje)")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.code
+
+    def is_valid(self, cart_subtotal=None):
+        if not self.is_active:
+            return False, "Este código de descuento no está activo."
+        
+        now = timezone.now() # Ahora 'timezone' está definido gracias a la importación
+        if self.valid_from and now < self.valid_from:
+            return False, "Este código de descuento aún no es válido."
+        if self.valid_until and now > self.valid_until:
+            return False, "Este código de descuento ha expirado."
+        
+        if self.usage_limit is not None and self.times_used >= self.usage_limit:
+            return False, "Este código de descuento ha alcanzado su límite de usos."
+            
+        if cart_subtotal is not None and cart_subtotal < self.min_purchase_amount:
+            # Formateamos el monto mínimo para la moneda local (asumiendo CLP sin decimales para el mensaje)
+            monto_min_formateado = "${:,.0f}".format(self.min_purchase_amount).replace(",", ".")
+            return False, f"Esta compra no alcanza el monto mínimo de {monto_min_formateado} para usar este código."
+            
+        return True, "Código válido."
+
+    def calculate_discount(self, amount):
+        # Aseguramos que amount sea Decimal para cálculos precisos
+        amount = Decimal(amount)
+        discount_value_decimal = Decimal(self.discount_value)
+
+        if self.discount_type == 'percentage':
+            # Calculamos el descuento como (valor_porcentaje / 100) * monto
+            discount = (discount_value_decimal / Decimal('100')) * amount
+            if self.max_discount_amount is not None:
+                max_discount_decimal = Decimal(self.max_discount_amount)
+                if discount > max_discount_decimal:
+                    return max_discount_decimal.quantize(Decimal('0.01')) # Redondea a 2 decimales
+            return discount.quantize(Decimal('0.01')) # Redondea a 2 decimales
+        elif self.discount_type == 'fixed_amount':
+            # El descuento no puede ser mayor que el monto
+            return min(discount_value_decimal, amount).quantize(Decimal('0.01')) # Redondea a 2 decimales
+        return Decimal('0.00')
     DISCOUNT_TYPE_CHOICES = [
         ('percentage', 'Porcentaje'),
         ('fixed_amount', 'Monto Fijo'),
