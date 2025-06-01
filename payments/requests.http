@@ -10,16 +10,16 @@
 
 
 # ### C 
-# POST https://django-flow-api.onrender.com/api/create-payment/
-# Content-Type: application/json
+POST https://django-flow-api.onrender.com/api/create-payment/
+Content-Type: application/json
 
-# {
-#     "amount": 1000,
-#     "commerceOrder": "1996",
-#     "subject": "Compra con una herramienta genial",
-#     "return_url":"https://django-flow-api.onrender.com",
-#     "customer_email": "patricio.dilet@gmail.com"
-# }
+{
+    "amount": 1000,
+    "commerceOrder": "1997",
+    "subject": "Compra con una herramienta genial",
+    "return_url":"https://django-flow-api.onrender.com",
+    "customer_email": "patricio.dilet@gmail.com"
+}
 
 
 # Variable para la URL base de tu API

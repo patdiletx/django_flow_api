@@ -39,39 +39,71 @@ def sign_params(params, secret_key):
 
 
 # --- Vistas del API ---
+# payments/views.py
+
+# Asegúrate de tener estas importaciones al principio de tu archivo:
+import os
+import requests
+import hmac
+import hashlib
+from collections import OrderedDict
+from django.conf import settings # Para settings.PUBLIC_URL_BASE
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from .models import Order # Para interactuar con tu modelo de órdenes
+
+# Si tienes la función sign_params en este mismo archivo, debería estar aquí o antes.
+# Ejemplo:
+# def sign_params(params, secret_key):
+#     sorted_params = OrderedDict(sorted(params.items()))
+#     param_string = "".join([f"{k}{v}" for k, v in sorted_params.items()])
+#     # print(f"--- DEBUG SIGNATURE: String para firmar: '{param_string}' ---") # Mantén este debug si aún lo necesitas
+#     signature = hmac.new(
+#         secret_key.encode('utf-8'),
+#         param_string.encode('utf-8'),
+#         hashlib.sha256
+#     ).hexdigest()
+#     return signature
+
 class CreatePaymentView(APIView):
     """
     Recibe detalles del pedido y envío de FungiGrow, crea una orden local,
     genera la petición de pago en Flow, y devuelve la URL de Flow para el pago.
     """
     def post(self, request, *args, **kwargs):
+        # Obtener datos del payload JSON enviado por el frontend
         amount = request.data.get('amount')
         commerce_order = request.data.get('commerceOrder')
         subject = request.data.get('subject')
-        # Nuevos campos del payload
-        currency = request.data.get('currency', 'CLP') # Moneda, con CLP por defecto
-        fungigrow_return_url_from_frontend = request.data.get('return_url')
+        currency = request.data.get('currency', 'CLP') # Moneda, con CLP por defecto si no se envía
+        fungigrow_return_url_from_frontend = request.data.get('return_url') # URL de FungiGrow para el usuario
         shipping_details = request.data.get('shippingDetails', {}) # Objeto, default a dict vacío
         customer_email_from_frontend = request.data.get('customer_email') 
 
-        # Validación más completa
-        if not all([amount, commerce_order, subject, fungigrow_return_url_from_frontend, customer_email_from_frontend]):
-            missing_params = []
-            if not amount: missing_params.append("amount")
-            if not commerce_order: missing_params.append("commerceOrder")
-            if not subject: missing_params.append("subject")
-            if not fungigrow_return_url_from_frontend: missing_params.append("return_url")
+        # Validación de parámetros requeridos del frontend
+        required_from_frontend = {
+            "amount": amount, 
+            "commerceOrder": commerce_order, 
+            "subject": subject,
+            "return_url": fungigrow_return_url_from_frontend, # Requerida por el plan del dev frontend
+            "customer_email": customer_email_from_frontend, # Requerida para notificaciones al cliente
+            "currency": currency # Requerida para enviar a Flow
+        }
+        missing_params = [key for key, value in required_from_frontend.items() if not value]
+        if missing_params:
             return Response(
-                {"error": f"Faltan parámetros requeridos: {', '.join(missing_params)}"},
+                {"error": f"Faltan parámetros requeridos del frontend: {', '.join(missing_params)}"},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        # Crear la orden en nuestra base de datos
         try:
             new_order = Order.objects.create(
                 commerce_order=commerce_order,
                 amount=amount,
                 status='PENDING',
-                fungigrow_return_url=fungigrow_return_url_from_frontend, # Guardamos la URL de FungiGrow
+                fungigrow_return_url=fungigrow_return_url_from_frontend,
                 shipping_name=shipping_details.get('nombreCompleto'),
                 shipping_rut=shipping_details.get('rut'),
                 shipping_address=shipping_details.get('direccion'),
@@ -81,72 +113,107 @@ class CreatePaymentView(APIView):
                 customer_email=customer_email_from_frontend 
             )
         except Exception as e:
+            # Podrías loguear el error 'e' aquí para más detalles
             print(f"ERROR al crear orden {commerce_order} en BD: {e}")
             return Response(
                 {"error": f"La orden {commerce_order} ya existe o hubo un error al crearla en la BD."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        # Obtener credenciales y URLs de Flow desde el entorno/settings
         api_key = os.getenv('FLOW_API_KEY')
         secret_key = os.getenv('FLOW_SECRET_KEY')
-        flow_api_base_url = os.getenv('FLOW_API_URL_PROD', 'https://flow.cl/api')
-        flow_payment_create_endpoint_url = f"{flow_api_base_url}/payment/create"
+        
+        # FLOW_API_URL_PROD debe estar seteada en Render.com
+        # (ej: https://sandbox.flow.cl/api o https://www.flow.cl/api)
+        flow_api_base_url = os.getenv('FLOW_API_URL_PROD') 
+        if not flow_api_base_url:
+            # Fallback o error si no está configurada la URL base de Flow
+            print("ERROR CRÍTICO: FLOW_API_URL_PROD no está configurada en el entorno.")
+            return Response({"error": "Configuración del servidor incompleta."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+        flow_payment_create_endpoint_url = f"{flow_api_base_url.rstrip('/')}/payment/create"
 
-        public_backend_url = settings.PUBLIC_URL_BASE # Nuestra URL base de la API Django
+        # URL pública base de NUESTRO backend (API Django) desde settings.py
+        # PUBLIC_URL_BASE debe estar seteada en Render.com
+        public_backend_url = settings.PUBLIC_URL_BASE
 
-        params = {
+        # Parámetros para enviar a Flow
+        params_to_flow = {
             'apiKey': api_key,
             'commerceOrder': str(commerce_order),
             'amount': str(amount),
             'subject': subject,
-            'email': "patricio.dilet@gmail.com", # Considera obtenerlo de shippingDetails o request.data
-            # El webhook de confirmación servidor-a-servidor sigue siendo nuestro
-            'urlConfirmation': f"{public_backend_url}/api/confirm-payment/",
-            # urlReturn para Flow AHORA apunta a nuestro endpoint de callback
-            'urlReturn': f"{public_backend_url}/payment/flow-callback/"
+            'email': customer_email_from_frontend, # Usamos el email del cliente para Flow
+            'currency': currency,                  # Usamos la moneda del frontend
+            'urlConfirmation': f"{public_backend_url.rstrip('/')}/api/confirm-payment/",
+            'urlReturn': f"{public_backend_url.rstrip('/')}/payment/flow-callback/"
+            # Añadimos paymentMethod: 9 como sugerencia para producción
+            # 'paymentMethod': 9 
         }
         
-        params['s'] = sign_params(params, secret_key)
+        # Generar la firma
+        # Asegúrate de que la función sign_params esté definida en este archivo o importada
+        params_to_flow['s'] = sign_params(params_to_flow, secret_key)
         
-        # (Los prints de depuración pueden quedarse o quitarse según prefieras)
+        # Logs de depuración (puedes comentarlos/quitarlos cuando todo funcione bien)
         print("---------------------------------------------------------")
         print("--- DEBUG: CREATE_PAYMENT PETICIÓN A FLOW ---")
         print(f"--- DEBUG: URL Flow: {flow_payment_create_endpoint_url}")
-        params_para_imprimir = params.copy(); params_para_imprimir.pop('apiKey', None) # No imprimir apiKey
+        # No imprimimos apiKey ni secretKey por seguridad en logs de producción
+        params_para_imprimir = params_to_flow.copy()
+        params_para_imprimir.pop('apiKey', None) 
         print(f"--- DEBUG: Params a Flow (sin apiKey): {params_para_imprimir}")
         print("---------------------------------------------------------")
 
         try:
-            response_from_flow = requests.post(flow_payment_create_endpoint_url, data=params)
-            response_from_flow.raise_for_status()
+            response_from_flow = requests.post(flow_payment_create_endpoint_url, data=params_to_flow)
+            response_from_flow.raise_for_status() # Lanza HTTPError para respuestas 4xx/5xx de Flow
             flow_json_response = response_from_flow.json()
-            
-            if 'code' in flow_json_response:
-                new_order.status = 'REJECTED'; new_order.save()
-                return Response({"error": f"Error por parte de Flow: {flow_json_response.get('message')}"}, status=status.HTTP_400_BAD_REQUEST)
-            
-            flow_token = flow_json_response.get('token')
-            if flow_token:
-                new_order.flow_token = flow_token; new_order.save()
-            else:
-                new_order.status = 'REJECTED'; new_order.save()
-                print(f"ERROR GRABE: Respuesta de Flow sin token: {flow_json_response} para orden {commerce_order}")
-                return Response({"error": "Respuesta inesperada de Flow (sin token)."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-            payment_redirect_url = f"{flow_json_response.get('url')}?token={flow_token}"
-            return Response({"redirect_url": payment_redirect_url, "token": flow_token}, status=status.HTTP_201_CREATED)
 
         except requests.exceptions.HTTPError as http_err:
             new_order.status = 'REJECTED'; new_order.save()
             error_content = "No se pudo obtener contenido del error de Flow."
             try: error_content = http_err.response.json()
-            except ValueError: error_content = http_err.response.text[:500]
+            except ValueError: error_content = http_err.response.text[:500] # Muestra primeros 500 chars si no es JSON
             print(f"ERROR HTTP de Flow: {http_err.response.status_code} - {error_content}")
-            return Response({"error": f"Error directo de Flow: {http_err.response.status_code}", "flow_response_details": error_content}, status=status.HTTP_502_BAD_GATEWAY)
+            return Response({
+                "error": f"Error directo de Flow: {http_err.response.status_code}", 
+                "flow_response_details": error_content
+            }, status=status.HTTP_502_BAD_GATEWAY)
         except requests.exceptions.RequestException as e:
             new_order.status = 'REJECTED'; new_order.save()
             print(f"ERROR de conexión con Flow: {e}")
             return Response({"error": f"Error de conexión al contactar a Flow: {e}"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        
+        # Si Flow devuelve un JSON con 'code', es un error estructurado de su API
+        if 'code' in flow_json_response:
+            new_order.status = 'REJECTED'; new_order.save()
+            return Response({
+                "error": f"Error por parte de Flow: {flow_json_response.get('message')}",
+                "flow_details": flow_json_response # Devolvemos todo el detalle del error de Flow
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        flow_token = flow_json_response.get('token')
+        if flow_token:
+            new_order.flow_token = flow_token
+            new_order.save() # Guardamos el token en nuestra orden
+        else:
+            # Si la respuesta fue 2xx pero no hay token, algo raro pasó
+            new_order.status = 'REJECTED'; new_order.save()
+            print(f"ERROR GRABE: Respuesta de Flow sin token: {flow_json_response} para orden {commerce_order}")
+            return Response({
+                "error": "Respuesta inesperada de Flow al crear el pago (sin token).",
+                "flow_details": flow_json_response
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        payment_redirect_url = f"{flow_json_response.get('url')}?token={flow_token}"
+        
+        return Response({
+            "redirect_url": payment_redirect_url,
+            "token": flow_token
+        }, status=status.HTTP_201_CREATED)
+
 
 
 # @method_decorator(csrf_exempt, name='dispatch')
