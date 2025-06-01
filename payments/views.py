@@ -18,6 +18,8 @@ from django.http import HttpResponse
 from django.http import HttpResponseRedirect
 import urllib.parse
 from .emails import send_new_sale_to_owner, send_payment_confirmation_to_customer
+from .models import DiscountCode # Importa el nuevo modelo
+from decimal import Decimal # Para manejar montos
 
 # Configura el logger para este módulo
 logger = logging.getLogger(__name__)
@@ -66,42 +68,89 @@ from .models import Order # Para interactuar con tu modelo de órdenes
 #     ).hexdigest()
 #     return signature
 
+
 class CreatePaymentView(APIView):
     """
-    Recibe detalles del pedido y envío de FungiGrow, crea una orden local,
-    genera la petición de pago en Flow, y devuelve la URL de Flow para el pago.
+    Recibe detalles del pedido, envío y código de descuento de FungiGrow.
+    Crea una orden local, re-valida el descuento, genera la petición de pago en Flow,
+    y devuelve la URL de Flow para el pago.
     """
     def post(self, request, *args, **kwargs):
-        # Obtener datos del payload JSON enviado por el frontend
-        amount = request.data.get('amount')
+        # --- 1. Obtener datos del payload JSON ---
+        amount_from_frontend_str = request.data.get('amount') # Este es el MONTO FINAL con descuento y envío
         commerce_order = request.data.get('commerceOrder')
         subject = request.data.get('subject')
-        currency = request.data.get('currency', 'CLP') # Moneda, con CLP por defecto si no se envía
-        fungigrow_return_url_from_frontend = request.data.get('return_url') # URL de FungiGrow para el usuario
-        shipping_details = request.data.get('shippingDetails', {}) # Objeto, default a dict vacío
-        customer_email_from_frontend = request.data.get('customer_email') 
+        currency = request.data.get('currency', 'CLP')
+        fungigrow_return_url_from_frontend = request.data.get('return_url')
+        shipping_details = request.data.get('shippingDetails', {})
+        customer_email_from_frontend = request.data.get('customer_email')
+        
+        # Datos del descuento (opcionales desde el frontend)
+        discount_code_str_applied = request.data.get('discount_code_applied', None)
+        # El frontend ya calculó el descuento y lo aplicó al 'amount'.
+        # Si el frontend enviara el 'cart_subtotal_products_only', podríamos hacer una revalidación más completa del monto.
 
-        # Validación de parámetros requeridos del frontend
+        # --- 2. Validación de parámetros básicos requeridos ---
         required_from_frontend = {
-            "amount": amount, 
+            "amount": amount_from_frontend_str, 
             "commerceOrder": commerce_order, 
             "subject": subject,
-            "return_url": fungigrow_return_url_from_frontend, # Requerida por el plan del dev frontend
-            "customer_email": customer_email_from_frontend, # Requerida para notificaciones al cliente
-            "currency": currency # Requerida para enviar a Flow
+            "return_url": fungigrow_return_url_from_frontend,
+            "customer_email": customer_email_from_frontend,
+            "currency": currency
         }
-        missing_params = [key for key, value in required_from_frontend.items() if not value]
+        missing_params = [key for key, value in required_from_frontend.items() if value is None or value == ""] # Chequea None y string vacío
         if missing_params:
             return Response(
                 {"error": f"Faltan parámetros requeridos del frontend: {', '.join(missing_params)}"},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        try:
+            final_amount_to_charge = Decimal(amount_from_frontend_str)
+            if final_amount_to_charge <= 0: # El monto final no puede ser cero o negativo
+                 return Response({"error": "El monto final del pedido no puede ser cero o negativo."}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            return Response({"error": "El 'amount' debe ser un número válido."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # --- 3. Revalidación del Código de Descuento (si se aplicó) ---
+        applied_discount_code_object = None
+        actual_discount_code_to_save = None # Código que se guardará en la orden
+
+        if discount_code_str_applied:
+            try:
+                discount_code_object = DiscountCode.objects.get(code__iexact=discount_code_str_applied)
+                
+                # Para validar min_purchase_amount, necesitaríamos el subtotal de productos ANTES del descuento.
+                # Como el frontend ya hizo esta validación, aquí solo validamos existencia, actividad, fechas y límite de uso.
+                # Si el frontend enviara 'cart_subtotal_products_only', podríamos usar:
+                # cart_subtotal_for_validation = Decimal(request.data.get('cart_subtotal_products_only', 0))
+                # is_valid, message = discount_code_object.is_valid(cart_subtotal=cart_subtotal_for_validation)
+
+                is_valid, message = discount_code_object.is_valid() # Validación básica
+                
+                if is_valid:
+                    applied_discount_code_object = discount_code_object # Para usarlo en FlowConfirmationView
+                    actual_discount_code_to_save = discount_code_object.code # Guardamos el código real
+                    print(f"INFO: Código de descuento '{discount_code_object.code}' re-validado exitosamente para orden {commerce_order}.")
+                    # NOTA: Confiamos en que el 'amount' enviado por el frontend ya tiene el descuento correctamente aplicado.
+                    # Una revalidación completa del monto descontado aquí requeriría el subtotal de productos.
+                else:
+                    # Si el código ya no es válido al momento de crear el pago, se procede sin descuento.
+                    # El frontend debería haber manejado esto, pero es una salvaguarda.
+                    print(f"ADVERTENCIA: Código '{discount_code_str_applied}' ya no es válido al crear pago para orden {commerce_order}. Mensaje: {message}. Se procederá sin descuento.")
+                    # No se asigna applied_discount_code_object, por lo que no se incrementará su uso.
+                    # El 'final_amount_to_charge' ya viene del frontend, así que no lo modificamos aquí.
+                    # El frontend es responsable de enviar el monto correcto si el código falla en su lado.
+            except DiscountCode.DoesNotExist:
+                print(f"ADVERTENCIA: Código de descuento '{discount_code_str_applied}' no encontrado al crear pago para orden {commerce_order}. Se procederá sin descuento.")
+                # No se aplica descuento. El 'final_amount_to_charge' es el que envió el frontend.
         
-        # Crear la orden en nuestra base de datos
+        # --- 4. Crear la Orden en la Base de Datos ---
         try:
             new_order = Order.objects.create(
                 commerce_order=commerce_order,
-                amount=amount,
+                amount=final_amount_to_charge, # Usamos el monto final que ya incluye el descuento (si lo hubo) y envío
                 status='PENDING',
                 fungigrow_return_url=fungigrow_return_url_from_frontend,
                 shipping_name=shipping_details.get('nombreCompleto'),
@@ -110,102 +159,76 @@ class CreatePaymentView(APIView):
                 shipping_commune=shipping_details.get('comuna'),
                 shipping_region=shipping_details.get('region'),
                 shipping_phone=shipping_details.get('telefono'),
-                customer_email=customer_email_from_frontend 
+                customer_email=customer_email_from_frontend,
+                applied_discount_code=actual_discount_code_to_save # Guardamos el código si fue válido
             )
         except Exception as e:
-            # Podrías loguear el error 'e' aquí para más detalles
             print(f"ERROR al crear orden {commerce_order} en BD: {e}")
             return Response(
                 {"error": f"La orden {commerce_order} ya existe o hubo un error al crearla en la BD."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Obtener credenciales y URLs de Flow desde el entorno/settings
+        # --- 5. Preparar y Enviar Petición a Flow ---
         api_key = os.getenv('FLOW_API_KEY')
         secret_key = os.getenv('FLOW_SECRET_KEY')
-        
-        # FLOW_API_URL_PROD debe estar seteada en Render.com
-        # (ej: https://sandbox.flow.cl/api o https://www.flow.cl/api)
-        flow_api_base_url = os.getenv('FLOW_API_URL_PROD') 
+        flow_api_base_url = os.getenv('FLOW_API_URL_PROD')
         if not flow_api_base_url:
-            # Fallback o error si no está configurada la URL base de Flow
-            print("ERROR CRÍTICO: FLOW_API_URL_PROD no está configurada en el entorno.")
+            print("ERROR CRÍTICO: FLOW_API_URL_PROD no está configurada.")
             return Response({"error": "Configuración del servidor incompleta."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            
         flow_payment_create_endpoint_url = f"{flow_api_base_url.rstrip('/')}/payment/create"
 
-        # URL pública base de NUESTRO backend (API Django) desde settings.py
-        # PUBLIC_URL_BASE debe estar seteada en Render.com
         public_backend_url = settings.PUBLIC_URL_BASE
 
-        # Parámetros para enviar a Flow
         params_to_flow = {
             'apiKey': api_key,
             'commerceOrder': str(commerce_order),
-            'amount': str(amount),
+            'amount': str(int(final_amount_to_charge)), # Flow espera un entero para CLP
             'subject': subject,
-            'email': customer_email_from_frontend, # Usamos el email del cliente para Flow
-            'currency': currency,                  # Usamos la moneda del frontend
+            'email': customer_email_from_frontend,
+            'currency': currency,
             'urlConfirmation': f"{public_backend_url.rstrip('/')}/api/confirm-payment/",
             'urlReturn': f"{public_backend_url.rstrip('/')}/payment/flow-callback/"
-            # Añadimos paymentMethod: 9 como sugerencia para producción
-            # 'paymentMethod': 9 
+            # 'paymentMethod': 9, # Opcional, Flow usa 9 (todos) por defecto
         }
         
-        # Generar la firma
-        # Asegúrate de que la función sign_params esté definida en este archivo o importada
         params_to_flow['s'] = sign_params(params_to_flow, secret_key)
         
-        # Logs de depuración (puedes comentarlos/quitarlos cuando todo funcione bien)
         print("---------------------------------------------------------")
-        print("--- DEBUG: CREATE_PAYMENT PETICIÓN A FLOW ---")
+        print(f"--- DEBUG: {('PRODUCCIÓN' if 'sandbox' not in flow_api_base_url else 'SANDBOX')} PETICIÓN A FLOW ---")
         print(f"--- DEBUG: URL Flow: {flow_payment_create_endpoint_url}")
-        # No imprimimos apiKey ni secretKey por seguridad en logs de producción
-        params_para_imprimir = params_to_flow.copy()
-        params_para_imprimir.pop('apiKey', None) 
+        params_para_imprimir = params_to_flow.copy(); params_para_imprimir.pop('apiKey', None)
         print(f"--- DEBUG: Params a Flow (sin apiKey): {params_para_imprimir}")
         print("---------------------------------------------------------")
 
         try:
             response_from_flow = requests.post(flow_payment_create_endpoint_url, data=params_to_flow)
-            response_from_flow.raise_for_status() # Lanza HTTPError para respuestas 4xx/5xx de Flow
+            response_from_flow.raise_for_status()
             flow_json_response = response_from_flow.json()
 
         except requests.exceptions.HTTPError as http_err:
             new_order.status = 'REJECTED'; new_order.save()
             error_content = "No se pudo obtener contenido del error de Flow."
             try: error_content = http_err.response.json()
-            except ValueError: error_content = http_err.response.text[:500] # Muestra primeros 500 chars si no es JSON
+            except ValueError: error_content = http_err.response.text[:500]
             print(f"ERROR HTTP de Flow: {http_err.response.status_code} - {error_content}")
-            return Response({
-                "error": f"Error directo de Flow: {http_err.response.status_code}", 
-                "flow_response_details": error_content
-            }, status=status.HTTP_502_BAD_GATEWAY)
+            return Response({"error": f"Error directo de Flow: {http_err.response.status_code}", "flow_response_details": error_content}, status=status.HTTP_502_BAD_GATEWAY)
         except requests.exceptions.RequestException as e:
             new_order.status = 'REJECTED'; new_order.save()
             print(f"ERROR de conexión con Flow: {e}")
             return Response({"error": f"Error de conexión al contactar a Flow: {e}"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         
-        # Si Flow devuelve un JSON con 'code', es un error estructurado de su API
-        if 'code' in flow_json_response:
+        if 'code' in flow_json_response: # Error estructurado de Flow
             new_order.status = 'REJECTED'; new_order.save()
-            return Response({
-                "error": f"Error por parte de Flow: {flow_json_response.get('message')}",
-                "flow_details": flow_json_response # Devolvemos todo el detalle del error de Flow
-            }, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": f"Error por parte de Flow: {flow_json_response.get('message')}", "flow_details": flow_json_response}, status=status.HTTP_400_BAD_REQUEST)
         
         flow_token = flow_json_response.get('token')
         if flow_token:
-            new_order.flow_token = flow_token
-            new_order.save() # Guardamos el token en nuestra orden
+            new_order.flow_token = flow_token; new_order.save()
         else:
-            # Si la respuesta fue 2xx pero no hay token, algo raro pasó
             new_order.status = 'REJECTED'; new_order.save()
             print(f"ERROR GRABE: Respuesta de Flow sin token: {flow_json_response} para orden {commerce_order}")
-            return Response({
-                "error": "Respuesta inesperada de Flow al crear el pago (sin token).",
-                "flow_details": flow_json_response
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"error": "Respuesta inesperada de Flow (sin token).", "flow_details": flow_json_response}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         payment_redirect_url = f"{flow_json_response.get('url')}?token={flow_token}"
         
@@ -348,6 +371,7 @@ class FlowConfirmationView(APIView):
     llama a un webhook de n8n para manejar notificaciones y otros flujos.
     """
     def post(self, request, *args, **kwargs):
+        # Flow envía los datos como form-data (request.POST) para el webhook de confirmación
         flow_token = request.POST.get('token')
 
         if not flow_token:
@@ -356,11 +380,15 @@ class FlowConfirmationView(APIView):
 
         logger.info(f"FlowConfirmationView: Recibido token de confirmación de Flow: {flow_token}")
 
+        # Variables para la lógica, se inicializan por si algo falla antes de obtenerlas de Flow
+        commerce_order_id = None 
+        order_to_update = None
+
         try:
             api_key = os.getenv('FLOW_API_KEY')
             secret_key = os.getenv('FLOW_SECRET_KEY')
-            flow_api_base_url = os.getenv('FLOW_API_URL_PROD', 'https://flow.cl/api')
-            flow_status_endpoint_url = f"{flow_api_base_url}/payment/getStatus"
+            flow_api_base_url = os.getenv('FLOW_API_URL_PROD', 'https://sandbox.flow.cl/api') # Asegúrate que esta var apunte a sandbox o prod según necesites
+            flow_status_endpoint_url = f"{flow_api_base_url.rstrip('/')}/payment/getStatus"
             
             params_to_sign_for_get_status = {'apiKey': api_key, 'token': flow_token}
             signature_for_get_status = sign_params(params_to_sign_for_get_status, secret_key)
@@ -371,38 +399,42 @@ class FlowConfirmationView(APIView):
                 's': signature_for_get_status
             }
 
-            response_flow_status = requests.get(flow_status_endpoint_url, params=params_for_get_status_call)
-            response_flow_status.raise_for_status()
+            # Llamada a Flow para obtener el estado REAL y AUTORITATIVO del pago
+            logger.debug(f"FlowConfirmationView: Consultando estado a Flow para token {flow_token} con params: {params_for_get_status_call}")
+            response_flow_status = requests.get(flow_status_endpoint_url, params=params_for_get_status_call, timeout=15) # Añadido timeout
+            response_flow_status.raise_for_status() # Lanza HTTPError para respuestas 4xx/5xx de Flow
             payment_data_from_flow = response_flow_status.json()
 
             commerce_order_id = payment_data_from_flow.get('commerceOrder')
-            flow_status_code = payment_data_from_flow.get('status')
-
+            flow_status_code = payment_data_from_flow.get('status') # 1=Pendiente, 2=Pagada, 3=Rechazada, 4=Anulada
+            
             if not commerce_order_id:
-                logger.error(f"FlowConfirmationView: Flow no devolvió commerceOrder para token {flow_token}. Respuesta: {payment_data_from_flow}")
-                return Response(status=status.HTTP_200_OK) 
+                logger.error(f"FlowConfirmationView: Flow no devolvió commerceOrder para el token {flow_token}. Respuesta de Flow: {payment_data_from_flow}")
+                return Response(status=status.HTTP_200_OK) # OK a Flow para que no reintente, pero logueamos el error.
 
             logger.info(f"FlowConfirmationView: Estado de Flow para orden {commerce_order_id} (token {flow_token}): Código {flow_status_code}")
 
             with transaction.atomic():
-                order_to_update = None
                 try:
                     order_to_update = Order.objects.select_for_update().get(commerce_order=commerce_order_id)
                 except Order.DoesNotExist:
-                    logger.error(f"FlowConfirmationView: Orden {commerce_order_id} (token {flow_token}) confirmada por Flow NO ENCONTRADA en BD.")
-                    return Response(status=status.HTTP_200_OK)
+                    logger.error(f"FlowConfirmationView: Orden {commerce_order_id} (token {flow_token}) confirmada por Flow NO FUE ENCONTRADA en la BD.")
+                    return Response(status=status.HTTP_200_OK) 
 
                 previous_status = order_to_update.status
+
+                # Guardar/Actualizar el token de Flow en nuestra orden si no lo teníamos
                 if not order_to_update.flow_token or order_to_update.flow_token != flow_token:
                     order_to_update.flow_token = flow_token
                 
                 should_trigger_n8n = False
                 
+                # Lógica de Idempotencia y actualización
                 if order_to_update.status == 'PAID' and flow_status_code == 2:
-                    logger.info(f"FlowConfirmationView: Orden {commerce_order_id} ya está PAGADA. No se realizan acciones adicionales de BD ni n8n.")
+                    logger.info(f"FlowConfirmationView: Orden {commerce_order_id} ya está PAGADA. No se realizan acciones adicionales.")
                 elif order_to_update.status == 'REJECTED' and (flow_status_code == 3 or flow_status_code == 4):
-                    logger.info(f"FlowConfirmationView: Orden {commerce_order_id} ya está RECHAZADA. No se realizan acciones adicionales de BD.")
-                else:
+                    logger.info(f"FlowConfirmationView: Orden {commerce_order_id} ya está RECHAZADA. No se realizan acciones adicionales.")
+                else: # El estado actual no es final o no coincide, procedemos a actualizar.
                     if flow_status_code == 2: # Pagada
                         order_to_update.status = 'PAID'
                         logger.info(f"FlowConfirmationView: ✅ Orden {commerce_order_id} actualizada a PAGADA en BD.")
@@ -410,18 +442,20 @@ class FlowConfirmationView(APIView):
                         order_to_update.status = 'REJECTED'
                         logger.info(f"FlowConfirmationView: ❌ Orden {commerce_order_id} actualizada a RECHAZADA en BD.")
                     elif flow_status_code == 1: # Pendiente
-                        logger.info(f"FlowConfirmationView: ⏳ Orden {commerce_order_id} PENDIENTE según Flow. Estado actual BD: {previous_status}.")
+                        # Si ya estaba PENDING, no hacemos nada. Podrías añadir lógica si es necesario.
+                        logger.info(f"FlowConfirmationView: ⏳ Orden {commerce_order_id} está/sigue PENDIENTE según Flow. Estado actual BD: {previous_status}.")
                     else:
                         logger.warning(f"FlowConfirmationView: Estado desconocido {flow_status_code} de Flow para orden {commerce_order_id}. Se marca como ERROR.")
                         order_to_update.status = 'ERROR'
 
                     order_to_update.save()
 
+                    # Disparamos n8n si el estado cambió a PAID y no lo estaba antes.
                     if order_to_update.status == 'PAID' and previous_status != 'PAID':
                         should_trigger_n8n = True
-                    # Podrías decidir si también quieres notificar a n8n para pagos RECHAZADOS
+                    # Opcional: disparar n8n para otros estados finales si es necesario
                     # elif order_to_update.status == 'REJECTED' and previous_status == 'PENDING':
-                    #     should_trigger_n8n = True # O un webhook diferente para fallos
+                    #     should_trigger_n8n = True # O un webhook diferente para fallos/rechazos
 
                 if should_trigger_n8n:
                     n8n_webhook_url = os.getenv('N8N_SALE_WEBHOOK_URL')
@@ -444,40 +478,38 @@ class FlowConfirmationView(APIView):
                             "fungigrow_return_url": order_to_update.fungigrow_return_url,
                             "order_created_at": order_to_update.created_at.isoformat() if order_to_update.created_at else None,
                             "order_updated_at": order_to_update.updated_at.isoformat() if order_to_update.updated_at else None,
-                            "store_owner_email_recipient": settings.STORE_OWNER_EMAIL,
+                            "store_owner_email_recipient": os.getenv('STORE_OWNER_EMAIL') # Añadido en un paso anterior
                         }
                         try:
-                            logger.info(f"FlowConfirmationView: Enviando datos a n8n para orden {commerce_order_id}...")
+                            logger.info(f"FlowConfirmationView: Enviando datos a n8n para orden {commerce_order_id} a URL: {n8n_webhook_url}")
                             requests.post(n8n_webhook_url, json=payload_to_n8n, timeout=10) 
                             logger.info(f"FlowConfirmationView: Datos enviados a n8n para orden {commerce_order_id}.")
                         except requests.exceptions.RequestException as n8n_error:
                             logger.error(f"FlowConfirmationView: Error al enviar datos a n8n para orden {commerce_order_id}: {n8n_error}")
                     else:
-                        logger.warning(f"FlowConfirmationView: N8N_SALE_WEBHOOK_URL no está configurada. No se puede notificar a n8n para orden {commerce_order_id}.")
-
-        except requests.exceptions.HTTPError as http_err:
-            error_text = http_err.response.text[:200] if http_err.response else str(http_err)
-            logger.error(f"FlowConfirmationView: HTTPError al contactar Flow para getStatus (token {flow_token}): {http_err.response.status_code if http_err.response else 'N/A'} - {error_text}")
-            # Determinar si es un error que Flow debería reintentar o un error de nuestra parte
-            if http_err.response and http_err.response.status_code == 400: # Error del cliente (ej. token inválido)
-                return Response({"error": "Token inválido para Flow getStatus o petición malformada"}, status=status.HTTP_400_BAD_REQUEST)
-            return Response({"error": "Error comunicándose con Flow"}, status=status.HTTP_503_SERVICE_UNAVAILABLE) # Error del servidor o red
+                        logger.warning(f"FlowConfirmationView: N8N_SALE_WEBHOOK_URL no configurada. No se notifica a n8n para orden {commerce_order_id}.")
         
-        except requests.exceptions.RequestException as e: # Errores de conexión, DNS, etc.
-            logger.error(f"FlowConfirmationView: RequestException al contactar Flow para getStatus (token {flow_token}): {e}")
+        except requests.exceptions.HTTPError as http_err: # Errores 4xx/5xx de la llamada a Flow getStatus
+            error_text = http_err.response.text[:200] if http_err.response else str(http_err)
+            logger.error(f"FlowConfirmationView: HTTPError al contactar Flow getStatus (token {flow_token}): {http_err.response.status_code if http_err.response else 'N/A'} - {error_text}")
+            # Si Flow devuelve 400 a getStatus, es un problema con el token o la firma, no deberíamos reintentar.
+            if http_err.response and http_err.response.status_code == 400:
+                return Response({"error": "Token inválido o petición malformada a Flow getStatus"}, status=status.HTTP_400_BAD_REQUEST)
+            # Para otros errores de Flow (5xx), podríamos permitir que Flow reintente el webhook devolviendo un error.
+            return Response({"error": "Error comunicándose con Flow"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        
+        except requests.exceptions.RequestException as e: # Errores de red al llamar a Flow getStatus
+            logger.error(f"FlowConfirmationView: RequestException al contactar Flow getStatus (token {flow_token}): {e}")
             return Response({"error": "Error de red comunicándose con Flow"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         
-        except Order.DoesNotExist: # Esto no debería pasar si la lógica de búsqueda es correcta.
-            logger.error(f"FlowConfirmationView: CRÍTICO - Orden no encontrada después de getStatus exitoso para commerceOrder {commerce_order_id if 'commerce_order_id' in locals() else 'desconocido'} (token {flow_token}).")
-            return Response(status=status.HTTP_200_OK) # OK a Flow para evitar reintentos, pero es un error grave nuestro.
-
-        except Exception as e:
+        except Exception as e: # Captura cualquier otra excepción inesperada
             logger.critical(f"FlowConfirmationView: Error crítico inesperado procesando confirmación (token {flow_token}): {e}", exc_info=True)
+            # Devolver 500 para indicar un error nuestro, pero Flow podría reintentar.
+            # Considera si un 200 OK es más apropiado para evitar reintentos de Flow por un error interno nuestro.
             return Response({"error": "Error interno del servidor"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        # Siempre respondemos 200 OK a Flow si llegamos hasta aquí sin errores graves que requieran reintento de Flow.
-        return Response(status=status.HTTP_200_OK)        
-
+        # Flow espera un 200 OK para saber que la notificación fue recibida y procesada (o al menos aceptada).
+        return Response(status=status.HTTP_200_OK)
 
 
 class OrderStatusView(APIView):
@@ -800,3 +832,48 @@ class QueryOrderStatusView(APIView):
 
 
         return Response(results, status=status.HTTP_200_OK)
+
+
+
+class ValidateDiscountCodeView(APIView):
+    def post(self, request, *args, **kwargs):
+        code_str = request.data.get('code')
+        cart_subtotal_str = request.data.get('cart_subtotal')
+
+        if not code_str or cart_subtotal_str is None:
+            return Response(
+                {"isValid": False, "message": "Faltan parámetros: 'code' o 'cart_subtotal'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            cart_subtotal = Decimal(cart_subtotal_str)
+        except Exception:
+            return Response(
+                {"isValid": False, "message": "El 'cart_subtotal' debe ser un número válido."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            discount_code = DiscountCode.objects.get(code__iexact=code_str) # Búsqueda insensible a mayúsculas
+        except DiscountCode.DoesNotExist:
+            return Response(
+                {"isValid": False, "message": "El código de descuento no existe."},
+                status=status.HTTP_404_NOT_FOUND # O 200 con isValid:false según preferencia del frontend
+            )
+
+        is_valid, message = discount_code.is_valid(cart_subtotal=cart_subtotal)
+
+        if not is_valid:
+            return Response({"isValid": False, "message": message}, status=status.HTTP_200_OK) # Usando 200 OK como pidió el frontend
+
+        discount_amount_calculated = discount_code.calculate_discount(cart_subtotal)
+        
+        return Response({
+            "isValid": True,
+            "code": discount_code.code,
+            "discountType": discount_code.discount_type,
+            "discountValue": discount_code.discount_value, # Valor nominal (ej. 10 para 10%, o 5000 para $5000)
+            "discountAmountCalculated": discount_amount_calculated, # Monto real a descontar
+            "message": "¡Descuento aplicado!"
+        }, status=status.HTTP_200_OK)

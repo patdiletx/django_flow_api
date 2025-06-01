@@ -25,7 +25,8 @@ class Order(models.Model):
     shipping_commune = models.CharField(max_length=100, blank=True, null=True)
     shipping_region = models.CharField(max_length=100, blank=True, null=True)
     shipping_phone = models.CharField(max_length=20, blank=True, null=True)
-    
+    applied_discount_code = models.CharField(max_length=50, null=True, blank=True, verbose_name="Código de Descuento Aplicado")
+
     customer_email = models.EmailField(max_length=254, blank=True, null=True) # Email del cliente
 
     

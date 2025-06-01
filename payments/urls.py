@@ -7,7 +7,8 @@ from .views import (
     FlowConfirmationView,
     OrderStatusView,
     GetOrderStatusByTokenView,
-    QueryOrderStatusView 
+    QueryOrderStatusView,
+    ValidateDiscountCodeView  
 )
 
 urlpatterns = [
@@ -15,4 +16,6 @@ urlpatterns = [
     path('confirm-payment/', FlowConfirmationView.as_view(), name='flow-confirmation'),
     path('order-status-by-token/<str:flow_token>/', GetOrderStatusByTokenView.as_view(), name='order-status-by-token'),
     path('query-order-status/', QueryOrderStatusView.as_view(), name='query-order-status'),
+    path('validate-discount/', ValidateDiscountCodeView.as_view(), name='validate-discount'),
+
 ]
