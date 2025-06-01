@@ -51,6 +51,17 @@ class Product(models.Model):
         verbose_name="Palabras Clave para Búsqueda IA"
     )
 
+    additional_image_urls = models.JSONField(
+        null=True, blank=True, default=list, 
+        verbose_name="URLs de Imágenes Adicionales",
+        help_text="Lista de URLs completas a imágenes adicionales. Ejemplo: [\"url1\", \"url2\"]"
+    )
+    video_urls = models.JSONField(
+        null=True, blank=True, default=list, 
+        verbose_name="URLs de Videos",
+        help_text="Lista de URLs a videos (YouTube, Vimeo, etc.). Ejemplo: [\"url_video1\", \"url_video2\"]"
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
