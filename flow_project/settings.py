@@ -160,11 +160,23 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 
 STATIC_ROOT = BASE_DIR / 'staticfiles' 
 
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+MEDIA_URL = '/media/'
+
+MEDIA_ROOT_BASE_ENV = os.getenv('DJANGO_MEDIA_ROOT_BASE')
+
+if MEDIA_ROOT_BASE_ENV:
+    # En producción (Render), esta variable apuntará a tu disco persistente
+    # Ej: '/var/data/render_media_files'
+    MEDIA_ROOT = Path(MEDIA_ROOT_BASE_ENV) / 'media' 
+else:
+    # En desarrollo local
+    MEDIA_ROOT = BASE_DIR / 'mediafiles'
 
 
 # Default primary key field type

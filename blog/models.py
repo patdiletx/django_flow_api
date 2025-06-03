@@ -37,7 +37,14 @@ class BlogPost(models.Model):
     excerpt = models.TextField(verbose_name="Resumen Corto")
     content = models.TextField(verbose_name="Contenido Completo (HTML)") # Se asume que el frontend manejará el renderizado de HTML
     
-    image_url = models.URLField(max_length=500, null=True, blank=True, verbose_name="URL de Imagen Principal")
+    # image_url = models.URLField(max_length=500, null=True, blank=True, verbose_name="URL de Imagen Principal")
+    
+    image = models.ImageField(
+        upload_to='blog_images/', 
+        null=True, blank=True, 
+        verbose_name="Imagen Principal del Artículo"
+    )
+    
     image_alt = models.CharField(max_length=255, null=True, blank=True, verbose_name="Texto Alternativo de Imagen Principal")
     data_ai_hint = models.CharField(max_length=255, null=True, blank=True, verbose_name="Palabras Clave para IA (Imagen)")
     
