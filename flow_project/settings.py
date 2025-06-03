@@ -221,7 +221,7 @@ LOGGING = {
     'disable_existing_loggers': False,
     'formatters': {
         'verbose': {
-            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'format': '{levelname} {asctime} {name} {module} {process:d} {thread:d} {message}',
             'style': '{',
         },
     },
@@ -231,31 +231,34 @@ LOGGING = {
             'formatter': 'verbose',
         },
     },
-    'root': {
+    'root': { # Captura logs de todo si no tienen un logger específico
         'handlers': ['console'],
-        'level': 'INFO', # Cambiado a INFO para producción, DEBUG es muy verboso
+        'level': 'DEBUG', # Ponemos DEBUG en root para capturar todo
     },
     'loggers': {
         'django': {
             'handlers': ['console'],
-            'level': os.getenv('DJANGO_LOG_LEVEL', 'INFO'), # Leer de env, default INFO
-            'propagate': False,
+            'level': os.getenv('DJANGO_LOG_LEVEL', 'INFO'), # Puedes subirlo a DEBUG también
+            'propagate': False, # Evita que los logs de django se dupliquen en root
         },
-        # Puedes añadir loggers específicos para tus apps si quieres más granularidad
-        'payments': {
+        'boto3': { # Para la librería de AWS
             'handlers': ['console'],
-            'level': 'DEBUG', # Poner DEBUG para tu app si necesitas ver tus logger.debug()
-            'propagate': True,
+            'level': 'DEBUG',
+            'propagate': True, # Permite que también los vea el root logger
         },
-        'blog': {
+        'botocore': { # Usado por boto3
             'handlers': ['console'],
             'level': 'DEBUG',
             'propagate': True,
         },
-         'products': {
+        'storages': { # Para django-storages
             'handlers': ['console'],
             'level': 'DEBUG',
             'propagate': True,
         },
+        # Tus apps, ponlas en DEBUG si quieres ver sus logger.debug()
+        'payments': {'handlers': ['console'],'level': 'DEBUG','propagate': True,},
+        'blog': {'handlers': ['console'],'level': 'DEBUG','propagate': True,},
+        'products': {'handlers': ['console'],'level': 'DEBUG','propagate': True,},
     },
 }
