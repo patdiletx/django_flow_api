@@ -158,13 +158,13 @@ Accept: application/json
 ### 2. Ver detalle de un artículo específico por su slug
 # RECUERDA: Reemplaza '<slug-de-tu-articulo-con-imagenes>' con un slug real 
 # de un artículo que tenga una imagen principal subida y, si es posible, URLs adicionales.
-GET {{baseUrl}}/api/blog/posts/<slug-de-tu-articulo-con-imagenes>/
+GET {{baseUrl}}/api/blog/posts/transforma-residuos-en-deliciosos-hongos-ostra-con-fungigrow
 Accept: application/json
 
 
 ### Ejemplo para un slug específico (descomenta y edita el slug):
-# @myBlogSlug = kit-premium-autocultivo-ostra-rey 
+@myBlogSlug = transforma-residuos-en-deliciosos-hongos-ostra-con-fungigrow 
 # # (o el slug de un artículo de blog que hayas creado con la nueva estructura)
 
-# GET {{baseUrl}}/api/blog/posts/{{myBlogSlug}}/
-# Accept: application/json
+GET {{baseUrl}}/api/blog/posts/{{myBlogSlug}}/
+Accept: application/json
