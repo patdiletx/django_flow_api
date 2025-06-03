@@ -6,3 +6,5 @@ gunicorn
 django-cors-headers
 whitenoise[brotli]
 Pillow
+django-storages
+boto3

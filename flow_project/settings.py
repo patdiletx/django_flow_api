@@ -125,6 +125,42 @@ STORE_OWNER_EMAIL = os.getenv('STORE_OWNER_EMAIL', 'patricio.dilet@gmail.com')
 
 N8N_SALE_WEBHOOK_URL = os.getenv('N8N_SALE_WEBHOOK_URL')
 
+AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
+AWS_STORAGE_BUCKET_NAME = os.getenv('AWS_STORAGE_BUCKET_NAME')
+AWS_S3_REGION_NAME = os.getenv('AWS_S3_REGION_NAME', 'us-east-2') # Pon tu región o un default
+
+# Define el backend de almacenamiento por defecto para los archivos subidos por usuarios (MEDIA)
+# Si AWS_STORAGE_BUCKET_NAME está definido, usamos S3. Si no, usamos el sistema de archivos local (para desarrollo).
+if AWS_STORAGE_BUCKET_NAME:
+    DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+
+    AWS_S3_FILE_OVERWRITE = False  # No sobrescribir archivos con el mismo nombre
+    AWS_DEFAULT_ACL = None         # Usaremos políticas de bucket para el acceso público, no ACLs de objeto
+    AWS_S3_SIGNATURE_VERSION = 's3v4' # Necesario para muchas regiones
+    AWS_QUERYSTRING_AUTH = False     # No usar URLs firmadas para GET si el bucket es público para lectura
+    AWS_S3_VERIFY = True           # Verificar certificados SSL (más seguro)
+
+    # Opcional: para guardar archivos en una subcarpeta 'media' dentro del bucket S3
+    AWS_LOCATION = os.getenv('AWS_LOCATION', 'media')
+    MEDIA_URL = f'https://{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com/{AWS_LOCATION}/'
+
+    # Si usas un custom domain con CloudFront para S3, lo configurarías así:
+    # AWS_S3_CUSTOM_DOMAIN = f'{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com' # O tu dominio de CloudFront
+    # MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/{AWS_LOCATION}/'
+
+    # MEDIA_ROOT no es usado por S3Boto3Storage para guardar archivos, 
+    # pero Django podría necesitarlo para otras cosas. Lo dejamos apuntando localmente.
+    MEDIA_ROOT = BASE_DIR / 'mediafiles_local_temp' # Carpeta temporal local, no usada por S3 para guardar
+else:
+    # Configuración para desarrollo local (si no están definidas las variables de S3)
+    # Esto permite que sigas subiendo archivos localmente sin S3 si lo deseas.
+    DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
+    MEDIA_URL = '/media/'
+    MEDIA_ROOT = BASE_DIR / 'mediafiles' # Donde se guardan localmente
+    if not os.path.exists(MEDIA_ROOT):
+        os.makedirs(MEDIA_ROOT)
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -164,7 +200,7 @@ STATIC_URL = '/static/'
 
 STATIC_ROOT = BASE_DIR / 'staticfiles' 
 
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+# STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 MEDIA_URL = '/media/'
 
