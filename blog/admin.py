@@ -27,6 +27,6 @@ class BlogPostAdmin(admin.ModelAdmin):
             'fields': ('excerpt', 'content')
         }),
         ('Media', {
-            'fields': ('image_url', 'image_alt', 'data_ai_hint')
+            'fields': ('image', 'image_alt', 'data_ai_hint', 'additional_image_urls', 'video_urls')
         }),
     )
