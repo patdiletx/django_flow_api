@@ -13,12 +13,51 @@
 POST https://django-flow-api.onrender.com/api/create-payment/
 Content-Type: application/json
 
+¡Claro! Aquí tienes el código para probar tu endpoint /api/create-payment/ actualizado usando la extensión REST Client en VS Code.
+
+Este ejemplo incluye los campos que ahora espera tu backend, como currency, customer_email, y el objeto shippingDetails, además del return_url que tu frontend FungiGrow proporcionará.
+
+Instrucciones:
+
+Copia y pega este contenido en tu archivo .http o .rest en VS Code.
+Importante - Ajusta los siguientes valores:
+Reemplaza https://django-flow-api.onrender.com en la variable @baseUrl con la URL real de tu servicio desplegado en Render.com.
+En el cuerpo JSON, reemplaza https://<URL_BASE_FUNGIGROW>/checkout/confirmation en el campo return_url con la URL de retorno real de tu tienda FungiGrow.
+Para cada prueba, usa un valor nuevo y único para commerceOrder.
+Ajusta los demás valores (amount, subject, customer_email, y los detalles en shippingDetails) según sea necesario para tu prueba.
+Haz clic en el enlace "Send Request" que la extensión REST Client muestra encima de la petición POST.
+<!-- end list -->
+
+HTTP
+
+# Variable para la URL base de tu API
+# Reemplaza con la URL de tu servicio en Render.com
+@baseUrl = https://django-flow-api.onrender.com
+# Para pruebas locales, sería:
+# @baseUrl = http://localhost:8000
+
+### Crear un nuevo pago (con todos los campos, incluyendo currency y shippingDetails)
+# Este endpoint ahora espera 'currency', 'customer_email' y 'shippingDetails'
+# enviados por el frontend FungiGrow.
+POST {{baseUrl}}/api/create-payment/
+Content-Type: application/json
+
 {
     "amount": 1000,
-    "commerceOrder": "1997",
-    "subject": "Compra con una herramienta genial",
-    "return_url":"https://django-flow-api.onrender.com",
-    "customer_email": "patricio.dilet@gmail.com"
+    "commerceOrder": "PROD-TEST-008",
+    "subject": "Prueba Produccion JSON Corregido",
+    "currency": "CLP",
+    "return_url": "https://fungigrow.cl/checkout/confirmation",
+    "customer_email": "patricio.dilet@gmail.com",
+    "shippingDetails": {
+        "nombreCompleto": "Patricio Diaz Valido",
+        "rut": "15440302-7",
+        "email": "patricio.dilet@gmail.com",
+        "direccion": "Calle Valida 123",
+        "comuna": "Comuna Valida",
+        "region": "Region Valida",
+        "telefono": "+56911223344"
+    }
 }
 
 

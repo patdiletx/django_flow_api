@@ -12,5 +12,6 @@ urlpatterns = [
     
     # --- RUTA para el callback de Flow (urlReturn para Flow) ---
     path('payment/flow-callback/', FlowCallbackView.as_view(), name='flow-callback'),
-    # La antigua 'payment/final-status/' o 'payment/result/' ya no se necesita si esta la reemplaza
+    
+    path('api/blog/', include('blog.urls', namespace='blog-api')),
 ]
