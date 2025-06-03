@@ -13,12 +13,12 @@ class BlogPostAdmin(admin.ModelAdmin):
     list_filter = ('is_published', 'date', 'tags', 'author_name')
     search_fields = ('title', 'excerpt', 'content', 'author_name')
     prepopulated_fields = {'slug': ('title',)}
-    filter_horizontal = ('tags',) # Mejor UI para ManyToManyField
+    filter_horizontal = ('tags',)
     date_hierarchy = 'date'
     
     fieldsets = (
         (None, {
-            'fields': ('title', 'slug', 'author_name') # Reemplaza author_name por author_user si usas ForeignKey
+            'fields': ('title', 'slug', 'author_name') 
         }),
         ('Publicación', {
             'fields': ('date', 'is_published', 'tags')
@@ -27,6 +27,18 @@ class BlogPostAdmin(admin.ModelAdmin):
             'fields': ('excerpt', 'content')
         }),
         ('Media', {
-            'fields': ('image', 'image_alt', 'data_ai_hint', 'additional_image_urls', 'video_urls')
+            'fields': (
+                'image', # Este es el ImageField para la imagen principal
+                'image_alt', 
+                'data_ai_hint',
+                'additional_image_urls', # Campo JSON
+                'video_urls'             # Campo JSON
+            ),
+            'description': """
+                <p>Para <strong>URLs de Imágenes Adicionales</strong> y <strong>URLs de Videos</strong>, ingrese una lista JSON válida.</p>
+                <p>Ejemplo para imágenes: <code>["https://ejemplo.com/img1.jpg", "https://ejemplo.com/img2.png"]</code></p>
+                <p>Ejemplo para videos: <code>["https://www.youtube.com/watch?v=VIDEO_ID", "https://vimeo.com/VIDEO_ID"]</code></p>
+                <p>Si no hay, puede dejar el valor como <code>null</code> o un array vacío <code>[]</code> (algunas bases de datos prefieren null, otras el array vacío por defecto para JSONField si así se definió en el modelo).</p>
+            """
         }),
     )
