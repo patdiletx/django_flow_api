@@ -19,7 +19,7 @@ class BlogPostListSerializer(serializers.ModelSerializer):
         model = BlogPost
         fields = [
             'id', 'slug', 'title', 'date', 'author_name', # Usa author_user.username si es ForeignKey
-            'excerpt', 'image', 'image_alt', 'data_ai_hint', 'tags', 'additional_image_urls', 'video_urls' 
+            'excerpt', 'image_url', 'image_alt', 'data_ai_hint', 'tags', 'additional_image_urls', 'video_urls' 
         ]
 
 class BlogPostDetailSerializer(serializers.ModelSerializer):
@@ -35,7 +35,7 @@ class BlogPostDetailSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'slug', 'title', 'date', 'author_name', # O author_display
             'excerpt', 'content', # 'content' se incluye aquí
-            'image', 'image_alt', 'data_ai_hint', 'tags',
+            'image_url', 'image_alt', 'data_ai_hint', 'tags',
             'additional_image_urls', 'video_urls',
             'created_at', 'updated_at' # Campos adicionales para el detalle
         ]
