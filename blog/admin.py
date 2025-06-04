@@ -36,7 +36,7 @@ class BlogPostAdmin(admin.ModelAdmin):
         }),
         ('Media', {
             'fields': (
-                'image', # Este es el ImageField para la imagen principal
+                'image_url', # Este es el ImageField para la imagen principal
                 'image_alt', 
                 'data_ai_hint',
                 'additional_image_urls', # Campo JSON
