@@ -186,6 +186,7 @@ else:
         "http://127.0.0.1:3000",
         "http://localhost:8080", # Otro puerto común
         "http://127.0.0.1:8080",
+        "http://fungigrow.cl",
     ]
 
 # Si tu PUBLIC_URL_BASE es un origen de confianza y no está en la lista, añádelo
