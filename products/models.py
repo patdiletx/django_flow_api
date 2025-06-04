@@ -9,14 +9,20 @@ class Product(models.Model):
     description = models.TextField(verbose_name="Descripción", blank=True, null=True)
     price = models.DecimalField(max_digits=10, decimal_places=0, verbose_name="Precio") # Ajustado para CLP sin decimales
     stock = models.PositiveIntegerField(default=0, verbose_name="Cantidad en Stock")
-    # image_url = models.URLField(max_length=500, blank=True, null=True, verbose_name="URL de la Imagen")
-    image = models.ImageField(
-        upload_to='product_images/',
-        null=True,
+    image_url = models.URLField(
+        max_length=500,  # Or a suitable length
         blank=True,
-        verbose_name="Imagen del Producto",
-        help_text="Imagen principal del producto."
+        null=True,
+        verbose_name="URL de la Imagen",
+        help_text="URL de la imagen principal del producto."
     )
+    # image = models.ImageField(
+    #     upload_to='product_images/',
+    #     null=True,
+    #     blank=True,
+    #     verbose_name="Imagen del Producto",
+    #     help_text="Imagen principal del producto."
+    # )
     category_name = models.CharField(max_length=100, blank=True, null=True, verbose_name="Nombre de Categoría")
     is_active = models.BooleanField(default=True, verbose_name="¿Está Activo?")
     
