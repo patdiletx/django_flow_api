@@ -2,6 +2,14 @@
 Django settings for flow_project project.
 """
 import os
+print(f"DEBUG: AWS_STORAGE_BUCKET_NAME: {os.getenv('AWS_STORAGE_BUCKET_NAME')}")
+print(f"DEBUG: AWS_S3_REGION_NAME: {os.getenv('AWS_S3_REGION_NAME')}")
+aws_access_key_id = os.getenv('AWS_ACCESS_KEY_ID')
+if aws_access_key_id:
+    print(f"DEBUG: AWS_ACCESS_KEY_ID starts with: {aws_access_key_id[:5]}")
+else:
+    print("DEBUG: AWS_ACCESS_KEY_ID is not set.")
+# DO NOT PRINT AWS_SECRET_ACCESS_KEY
 from pathlib import Path
 from urllib.parse import urlparse # Para CSRF_TRUSTED_ORIGINS
 
@@ -233,7 +241,7 @@ LOGGING = {
     },
     'root': { # Captura logs de todo si no tienen un logger específico
         'handlers': ['console'],
-        'level': 'DEBUG', # Ponemos DEBUG en root para capturar todo
+        'level': 'DEBUG', # Changed from 'INFO' or other to 'DEBUG'
     },
     'loggers': {
         'django': {

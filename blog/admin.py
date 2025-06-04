@@ -1,5 +1,8 @@
 from django.contrib import admin
 from .models import Tag, BlogPost
+import logging
+
+logger = logging.getLogger(__name__)
 
 @admin.register(Tag)
 class TagAdmin(admin.ModelAdmin):
@@ -15,10 +18,15 @@ class BlogPostAdmin(admin.ModelAdmin):
     prepopulated_fields = {'slug': ('title',)}
     filter_horizontal = ('tags',)
     date_hierarchy = 'date'
+
+    def save_model(self, request, obj, form, change):
+        logger.debug(f"Attempting to save BlogPost: {obj.title}, User: {request.user.username}")
+        super().save_model(request, obj, form, change)
+        logger.info(f"BlogPost saved: {obj.title}")
     
     fieldsets = (
         (None, {
-            'fields': ('title', 'slug', 'author_name') 
+            'fields': ('title', 'slug', 'author_name')
         }),
         ('Publicación', {
             'fields': ('date', 'is_published', 'tags')
